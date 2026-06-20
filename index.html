@@ -306,7 +306,7 @@ body.dark .cfg-ok{background:var(--acl);color:var(--ac);border-color:var(--ac)}
 .tabs{background:var(--sf);border-bottom:2px solid var(--bd);padding:0 .5rem;display:flex;align-items:stretch;box-shadow:0 2px 8px rgba(0,0,0,.05);flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tab-group{position:relative;display:flex;align-items:stretch}
 .tab-group.tg-open .tab-dropdown{display:block}
-.tab-group-btn{padding:12px 14px;border:none;background:transparent;cursor:pointer;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--tx2);white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:4px}
+.tab-group-btn{padding:12px 14px;border:none;background:transparent;cursor:pointer;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--tx2);white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:4px;touch-action:manipulation}
 .tab-group-btn:hover,.tab-group:hover .tab-group-btn{color:var(--pr);background:var(--prl)}
 .tab-group-btn.has-active{color:var(--pr);border-bottom-color:var(--pr);background:var(--prl)}
 .tab-group-arrow{font-size:9px;opacity:.6;transition:transform .15s}
@@ -583,7 +583,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   <button class="tab" id="tab-hotels" onclick="showTab('hotels')">🏨 الفنادق</button>
 
   <div class="tab-group" id="tabg-vouchers">
-    <button class="tab-group-btn" id="tabg-btn-vouchers" onclick="toggleTabGroup('tabg-vouchers')">📋 الإذونات <span class="tab-group-arrow">▼</span></button>
+    <button class="tab-group-btn" id="tabg-btn-vouchers" onclick="toggleTabGroup('tabg-vouchers',event)">📋 الإذونات <span class="tab-group-arrow">▼</span></button>
     <div class="tab-dropdown">
       <button class="tab h" id="tab-bulk-voucher" onclick="showTab('bulk-voucher')">📋 إذن جماعي</button>
       <button class="tab" onclick="openStandaloneReceiptModal()">🧾 إذن استلام نقدية</button>
@@ -592,7 +592,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   </div>
 
   <div class="tab-group" id="tabg-reports">
-    <button class="tab-group-btn" id="tabg-btn-reports" onclick="toggleTabGroup('tabg-reports')">📊 التقارير <span class="tab-group-arrow">▼</span></button>
+    <button class="tab-group-btn" id="tabg-btn-reports" onclick="toggleTabGroup('tabg-reports',event)">📊 التقارير <span class="tab-group-arrow">▼</span></button>
     <div class="tab-dropdown">
       <button class="tab h" id="tab-reports" onclick="showTab('reports')">📈 التقارير</button>
       <button class="tab h" id="tab-log" onclick="showTab('log')">📜 سجل النشاط</button>
@@ -603,7 +603,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   </div>
 
   <div class="tab-group" id="tabg-admin">
-    <button class="tab-group-btn" id="tabg-btn-admin" onclick="toggleTabGroup('tabg-admin')">⚙ الإدارة <span class="tab-group-arrow">▼</span></button>
+    <button class="tab-group-btn" id="tabg-btn-admin" onclick="toggleTabGroup('tabg-admin',event)">⚙ الإدارة <span class="tab-group-arrow">▼</span></button>
     <div class="tab-dropdown">
       <button class="tab h" id="tab-users" onclick="showTab('users')">👥 المستخدمين</button>
       <button class="tab h" id="tab-locks" onclick="showTab('locks')">🔒 تقفيل الأفواج</button>
@@ -4644,7 +4644,8 @@ function markTabsDirty(...tabs){tabs.forEach(t=>_dirtyTabs.add(t));}
 function markAllTabsDirty(){['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts','sched','tasks','system'].forEach(t=>_dirtyTabs.add(t));}
 
 // ===== Tab-group dropdowns: hover يعمل على الكمبيوتر، والـ click هنا يخلّيها تشتغل باللمس على الموبايل =====
-function toggleTabGroup(id){
+function toggleTabGroup(id,ev){
+  if(ev){ev.preventDefault();ev.stopPropagation();}
   const grp=document.getElementById(id);if(!grp)return;
   const wasOpen=grp.classList.contains('tg-open');
   document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
@@ -4653,6 +4654,9 @@ function toggleTabGroup(id){
 document.addEventListener('click',e=>{
   if(!e.target.closest('.tab-group'))document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
 });
+document.addEventListener('touchstart',e=>{
+  if(!e.target.closest('.tab-group'))document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
+},{passive:true});
 
 function showTab(t){
   document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
