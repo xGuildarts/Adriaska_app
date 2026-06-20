@@ -311,7 +311,7 @@ body.dark .cfg-ok{background:var(--acl);color:var(--ac);border-color:var(--ac)}
 .tab-group-btn.has-active{color:var(--pr);border-bottom-color:var(--pr);background:var(--prl)}
 .tab-group-arrow{font-size:9px;opacity:.6;transition:transform .15s}
 .tab-group:hover .tab-group-arrow{transform:rotate(180deg)}
-.tab-dropdown{position:absolute;top:100%;right:0;min-width:180px;background:var(--sf);border:1px solid var(--bd2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:200;display:none;padding:5px;margin-top:2px}
+.tab-dropdown{position:fixed;min-width:180px;background:var(--sf);border:1px solid var(--bd2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;display:none;padding:5px}
 .tab-group:hover .tab-dropdown{display:block}
 .tab-dropdown .tab{display:block;width:100%;text-align:right;border-radius:7px;border-bottom:none;margin:0;padding:9px 13px;font-size:13px}
 .tab-dropdown .tab:hover{background:var(--prl);color:var(--pr)}
@@ -4649,8 +4649,23 @@ function toggleTabGroup(id,ev){
   const grp=document.getElementById(id);if(!grp)return;
   const wasOpen=grp.classList.contains('tg-open');
   document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
-  if(!wasOpen)grp.classList.add('tg-open');
+  if(!wasOpen){grp.classList.add('tg-open');positionTabDropdown(grp);}
 }
+function positionTabDropdown(grp){
+  const btn=grp.querySelector('.tab-group-btn');
+  const dd=grp.querySelector('.tab-dropdown');
+  if(!btn||!dd)return;
+  const r=btn.getBoundingClientRect();
+  dd.style.top=r.bottom+'px';
+  // RTL: align dropdown's right edge with the button's right edge, but keep it on-screen
+  let rightPos=window.innerWidth-r.right;
+  if(rightPos<4)rightPos=4;
+  dd.style.right=rightPos+'px';
+  dd.style.left='auto';
+}
+document.querySelectorAll('.tab-group').forEach(grp=>{
+  grp.addEventListener('mouseenter',()=>positionTabDropdown(grp));
+});
 document.addEventListener('click',e=>{
   if(!e.target.closest('.tab-group'))document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
 });
