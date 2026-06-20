@@ -305,18 +305,20 @@ body.dark .cfg-ok{background:var(--acl);color:var(--ac);border-color:var(--ac)}
 .hbtn:hover{background:rgba(255,255,255,.22)}
 .tabs{background:var(--sf);border-bottom:2px solid var(--bd);padding:0 .5rem;display:flex;align-items:stretch;box-shadow:0 2px 8px rgba(0,0,0,.05);flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tab-group{position:relative;display:flex;align-items:stretch}
-.tab-group.tg-open .tab-dropdown{display:block}
 .tab-group-btn{padding:12px 14px;border:none;background:transparent;cursor:pointer;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--tx2);white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:4px;touch-action:manipulation}
-.tab-group-btn:hover,.tab-group:hover .tab-group-btn{color:var(--pr);background:var(--prl)}
+.tab-group-btn:hover{color:var(--pr);background:var(--prl)}
 .tab-group-btn.has-active{color:var(--pr);border-bottom-color:var(--pr);background:var(--prl)}
 .tab-group-arrow{font-size:9px;opacity:.6;transition:transform .15s}
-.tab-group:hover .tab-group-arrow{transform:rotate(180deg)}
-.tab-dropdown{position:fixed;min-width:180px;background:var(--sf);border:1px solid var(--bd2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;display:none;padding:5px}
-.tab-group:hover .tab-dropdown{display:block}
-.tab-dropdown .tab{display:block;width:100%;text-align:right;border-radius:7px;border-bottom:none;margin:0;padding:9px 13px;font-size:13px}
+#tg-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:none;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
+#tg-modal-overlay.show{display:flex}
+.tg-modal-box{background:var(--sf);border-radius:16px;width:100%;max-width:320px;max-height:80vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3);padding:10px}
+.tg-modal-title{font-size:14px;font-weight:800;color:var(--tx);text-align:center;padding:8px 10px 12px;border-bottom:1.5px solid var(--bd);margin-bottom:8px}
+.tab-dropdown{display:none}
+.tab-dropdown.tg-modal-active{display:block}
+.tab-dropdown .tab{display:block;width:100%;text-align:right;border-radius:7px;border-bottom:none;margin:0;padding:11px 13px;font-size:14px}
 .tab-dropdown .tab:hover{background:var(--prl);color:var(--pr)}
 .tab-dropdown .tab.active{background:var(--prl);color:var(--pr);border-bottom:none}
-body.dark .tab-dropdown{box-shadow:0 8px 24px rgba(0,0,0,.4)}
+body.dark .tg-modal-box{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .tab{padding:12px 15px;border:none;background:transparent;cursor:pointer;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--tx2);white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s}
 .tab:hover{color:var(--pr);background:var(--prl)}
 .tab.active{color:var(--pr);border-bottom-color:var(--pr);background:var(--prl)}
@@ -1572,6 +1574,14 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
 </div>
 </div></div><!-- end main/app -->
 
+<!-- TAB GROUP DROPDOWN MODAL - opens in center of screen regardless of button position -->
+<div id="tg-modal-overlay" onclick="if(event.target===this)closeTabGroupModal()">
+  <div class="tg-modal-box">
+    <div class="tg-modal-title" id="tg-modal-title"></div>
+    <div id="tg-modal-body"></div>
+  </div>
+</div>
+
 <!-- CUSTOM POPUP OVERLAY - moved here so JS can find it on parse -->
 <div id="mtr-popup-overlay">
   <div class="mtr-popup-box" id="mtr-popup-box">
@@ -2196,6 +2206,7 @@ async function printPaymentVoucher(bookingId, payIdx){
 
 // ====== إذن استلام نقدية (مستقل عن الحجوزات) ======
 function openStandaloneReceiptModal(){
+  closeTabGroupModal();
   const existing=document.getElementById('std-receipt-overlay');if(existing)existing.remove();
   const today=new Date().toISOString().split('T')[0];
   const pmOptions=PM_TYPES.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -4643,51 +4654,40 @@ let _activeTab='dash';
 function markTabsDirty(...tabs){tabs.forEach(t=>_dirtyTabs.add(t));}
 function markAllTabsDirty(){['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts','sched','tasks','system'].forEach(t=>_dirtyTabs.add(t));}
 
-// ===== Tab-group dropdowns: hover يعمل على الكمبيوتر، والـ click هنا يخلّيها تشتغل باللمس على الموبايل =====
+// ===== Tab-group dropdowns: تفتح كمودال في نص الشاشة دايمًا، بعيد عن موضع الزرار =====
+const _tgOriginalParents=new WeakMap();
 function toggleTabGroup(id,ev){
   if(ev){ev.preventDefault();ev.stopPropagation();}
   const grp=document.getElementById(id);if(!grp)return;
-  const wasOpen=grp.classList.contains('tg-open');
-  document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
-  if(!wasOpen){grp.classList.add('tg-open');positionTabDropdown(grp);}
+  openTabGroupModal(grp);
 }
-function positionTabDropdown(grp){
+function openTabGroupModal(grp){
   const btn=grp.querySelector('.tab-group-btn');
   const dd=grp.querySelector('.tab-dropdown');
-  if(!btn||!dd)return;
-  const r=btn.getBoundingClientRect();
-  const margin=8;
-  const spaceBelow=window.innerHeight-r.bottom-margin;
-  const spaceAbove=r.top-margin;
-  // اظهر القائمة لفوق الزرار لو المساحة تحته مش كافية وفوقه أوسع
-  if(spaceBelow<160&&spaceAbove>spaceBelow){
-    dd.style.bottom=(window.innerHeight-r.top)+'px';
-    dd.style.top='auto';
-    dd.style.maxHeight=Math.max(spaceAbove,120)+'px';
-  }else{
-    dd.style.top=r.bottom+'px';
-    dd.style.bottom='auto';
-    dd.style.maxHeight=Math.max(spaceBelow,120)+'px';
-  }
-  dd.style.overflowY='auto';
-  // RTL: align dropdown's right edge with the button's right edge, but keep it on-screen
-  let rightPos=window.innerWidth-r.right;
-  if(rightPos<4)rightPos=4;
-  dd.style.right=rightPos+'px';
-  dd.style.left='auto';
+  const overlay=document.getElementById('tg-modal-overlay');
+  const body=document.getElementById('tg-modal-body');
+  const titleEl=document.getElementById('tg-modal-title');
+  if(!btn||!dd||!overlay||!body)return;
+  if(!_tgOriginalParents.has(dd))_tgOriginalParents.set(dd,dd.parentNode);
+  titleEl.textContent=btn.textContent.replace('▼','').trim();
+  body.innerHTML='';
+  body.appendChild(dd);
+  dd.classList.add('tg-modal-active');
+  overlay.classList.add('show');
 }
-document.querySelectorAll('.tab-group').forEach(grp=>{
-  grp.addEventListener('mouseenter',()=>positionTabDropdown(grp));
-});
-document.addEventListener('click',e=>{
-  if(!e.target.closest('.tab-group'))document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
-});
-document.addEventListener('touchstart',e=>{
-  if(!e.target.closest('.tab-group'))document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
-},{passive:true});
+function closeTabGroupModal(){
+  const overlay=document.getElementById('tg-modal-overlay');
+  if(overlay)overlay.classList.remove('show');
+  // رجّع كل dropdown لمكانه الأصلي جوه الـ tab-group بتاعه
+  document.querySelectorAll('.tab-dropdown.tg-modal-active').forEach(dd=>{
+    dd.classList.remove('tg-modal-active');
+    const orig=_tgOriginalParents.get(dd);
+    if(orig)orig.appendChild(dd);
+  });
+}
 
 function showTab(t){
-  document.querySelectorAll('.tab-group.tg-open').forEach(g=>g.classList.remove('tg-open'));
+  closeTabGroupModal();
   _activeTab=t;
   sessionStorage.setItem('mtr_last_tab',t);
   localStorage.setItem('mtr_last_tab',t);
