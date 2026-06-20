@@ -4656,7 +4656,20 @@ function positionTabDropdown(grp){
   const dd=grp.querySelector('.tab-dropdown');
   if(!btn||!dd)return;
   const r=btn.getBoundingClientRect();
-  dd.style.top=r.bottom+'px';
+  const margin=8;
+  const spaceBelow=window.innerHeight-r.bottom-margin;
+  const spaceAbove=r.top-margin;
+  // اظهر القائمة لفوق الزرار لو المساحة تحته مش كافية وفوقه أوسع
+  if(spaceBelow<160&&spaceAbove>spaceBelow){
+    dd.style.bottom=(window.innerHeight-r.top)+'px';
+    dd.style.top='auto';
+    dd.style.maxHeight=Math.max(spaceAbove,120)+'px';
+  }else{
+    dd.style.top=r.bottom+'px';
+    dd.style.bottom='auto';
+    dd.style.maxHeight=Math.max(spaceBelow,120)+'px';
+  }
+  dd.style.overflowY='auto';
   // RTL: align dropdown's right edge with the button's right edge, but keep it on-screen
   let rightPos=window.innerWidth-r.right;
   if(rightPos<4)rightPos=4;
