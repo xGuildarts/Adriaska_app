@@ -429,7 +429,7 @@ tr:hover td{background:#f5f8fc}
 .bus-driver{width:54px;height:32px;background:var(--pr);color:#fff;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin:0 auto .45rem}
 .bus-row{display:flex;gap:5px;align-items:stretch;justify-content:center;margin-bottom:5px;flex-wrap:nowrap}
 .bus-aisle{width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--tx3)}
-.seat{width:250px;min-height:180px;border-radius:var(--r);border:2px solid var(--bd2);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:pointer;background:var(--sf);padding:10px 8px;transition:all .15s;flex-shrink:0;user-select:none}
+.seat{width:250px;min-height:180px;border-radius:var(--r);border:2px solid var(--bd2);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:pointer;background:var(--sf);padding:10px 8px;transition:all .15s;flex-shrink:0;user-select:none;--seat-w:250px}
 .seat.empty{border-style:dashed}
 .seat.empty:hover{border-color:var(--pr);background:var(--prl)}
 .seat.taken{cursor:grab;border-color:transparent}
@@ -466,7 +466,7 @@ tr:hover td{background:#f5f8fc}
 @media(max-width:600px){.g2,.g3,.g4,.g5{grid-template-columns:1fr}.apt-grid{grid-template-columns:repeat(4,1fr)}.aot{min-width:55px;font-size:11px}
 .bus-wrap{padding:.5rem .5rem 1rem;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .bus-row{flex-wrap:nowrap;justify-content:flex-start;min-width:max-content}
-.seat{width:110px;min-height:120px;padding:7px 5px}
+.seat{width:110px;min-height:120px;padding:7px 5px;--seat-w:110px}
 .seat.empty .snum{font-size:22px}
 .snum{font-size:14px}
 .sname{font-size:13px}
@@ -6079,7 +6079,7 @@ function renderBusLayout(cn,busIdx){
     }
     return `<div class="seat empty" style="cursor:default"><span class="snum">${sn}</span></div>`;
   }
-  let busHtml=`<div class="bus-wrap" style="overflow:visible"><div class="bus-top">🚌 ${busName} · ${conv.label} · دخول ${conv.checkin} 9-11 ص · خروج ${conv.checkout} 5-7 ص</div><div class="bus-driver">سائق</div>`;
+  let busHtml=`<div class="bus-wrap"><div class="bus-top">🚌 ${busName} · ${conv.label} · دخول ${conv.checkin} 9-11 ص · خروج ${conv.checkout} 5-7 ص</div><div class="bus-driver">سائق</div>`;
 
   // دالة بناء صف: [يمين_نافذة, يمين_ممر | فاصل | شمال_ممر, شمال_نافذة]
   // في RTL: الكراسي من اليمين للشمال = مقعد أيمن (نافذة) ← مقعد أيسر (ممر) | ممر | مقعد أيمن (ممر) → مقعد أيسر (نافذة)
@@ -6102,17 +6102,17 @@ function renderBusLayout(cn,busIdx){
   busHtml+=`<div style="border-top:2px dashed var(--bd2);margin:4px 0"></div>`;
 
   // صف 6: يمين = حمام (merge كرسيين)، شمال = 21، 22
-  const WC_MERGED=`<div style="width:500px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--prl);border:2.5px solid var(--pr2);border-radius:10px;min-height:135px;padding:8px;gap:4px;font-family:'Cairo',sans-serif">
-    <span style="font-size:32px">🚻</span>
-    <span style="font-size:14px;font-weight:800;color:var(--pr)">WC</span>
+  const WC_MERGED=`<div style="width:calc(2 * var(--seat-w, 110px) + 5px);flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--prl);border:2.5px solid var(--pr2);border-radius:10px;min-height:120px;padding:8px;gap:4px;font-family:'Cairo',sans-serif">
+    <span style="font-size:28px">🚻</span>
+    <span style="font-size:13px;font-weight:800;color:var(--pr)">WC</span>
   </div>`;
   const AISLE_THIN=`<div class="bus-aisle">│</div>`;
   busHtml+=`<div class="bus-row">${WC_MERGED}${AISLE_THIN}${ms(sc+1)}${ms(sc)}</div>`;
   sc+=2;
 
   // صف 7: يمين = باب (merge كرسيين)، شمال = 23، 24
-  const DOOR_MERGED=`<div style="width:500px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--wnl);border:2.5px dashed var(--wn);border-radius:10px;min-height:135px;padding:8px;gap:4px;font-family:'Cairo',sans-serif">
-    <span style="font-size:32px">🚪</span>
+  const DOOR_MERGED=`<div style="width:calc(2 * var(--seat-w, 110px) + 5px);flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--wnl);border:2.5px dashed var(--wn);border-radius:10px;min-height:120px;padding:8px;gap:4px;font-family:'Cairo',sans-serif">
+    <span style="font-size:28px">🚪</span>
     <span style="font-size:14px;font-weight:800;color:var(--wn)">Door</span>
   </div>`;
   busHtml+=`<div class="bus-row">${DOOR_MERGED}${AISLE_THIN}${ms(sc+1)}${ms(sc)}</div>`;
