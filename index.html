@@ -5313,7 +5313,7 @@ async function viewClient(id){
   }
   const pR=b.payments.length?b.payments.map((p,pi)=>{const isDisburs=p.amount<0;return`<tr><td>${p.date||'-'}</td><td style="font-weight:700;color:${isDisburs?'var(--dn)':'var(--ac)'}">${isDisburs?'↓ مسترد '+Math.abs(p.amount).toLocaleString():'↑ '+p.amount.toLocaleString()} ج</td><td>${p.payMethod||'-'}</td><td>${p.note||'-'}</td><td style="text-align:center"><button onclick="printPaymentVoucher(${b.id},${pi})" title="طباعة إذن" style="background:none;border:1px solid var(--bd2);border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:var(--tx2);font-family:'Cairo',sans-serif" onmouseover="this.style.borderColor='var(--pr)';this.style.color='var(--pr)'" onmouseout="this.style.borderColor='var(--bd2)';this.style.color='var(--tx2)'">🖨️</button></td></tr>`;}).join(''):'<tr><td colspan="5" style="text-align:center;color:var(--tx3)">لا توجد دفعات</td></tr>';
   const aR=(b.apts||[]).map(a=>`<tr><td><span class="badge b-bl">${a}</span></td><td style="color:var(--tx2);font-size:11px">${APTS[a]?.desc||''}</td><td style="font-weight:700">${((b.aptPrices||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
-  const aR2=(b.apts2||[]).map(a=>`<tr><td><span class="badge b-wn">${a}</span></td><td style="color:var(--tx2);font-size:11px">${APTS[a]?.desc||''} <span style="background:var(--wnl);color:var(--wn);border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">فوج 2</span></td><td style="font-weight:700">${((b.aptPrices2||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
+  const aR2=(b.apts2||[]).map(a=>`<tr><td><span class="badge b-wn">${a}</span></td><td style="color:var(--tx2);font-size:11px">${APTS[a]?.desc||''} <span style="background:var(--wnl);color:var(--wn);border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">${convTxt(b.convoy2)}</span></td><td style="font-weight:700">${((b.aptPrices2||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
   const base2seats=aptSeats2(b);
   const effS1=effSeats(b); // إجمالي الكراسي = شقق ف1+ف2+إضافي-خصم
   const as=(b.seatAssign||[]).filter(s=>s.seatNum).map(s=>s.seatNum).join('، ');
@@ -7526,7 +7526,7 @@ function calcEditTotal(id){
   const maxDisc=baseS1+extra;
   const discWarn=sd>maxDisc?`<div style="background:var(--dnl);border:1px solid var(--dn);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--dn);margin-top:4px">⚠️ الكراسي المخصومة (${sd}) تتجاوز كراسي الفوج الأول (${maxDisc})</div>`:'';
   const el=document.getElementById('edit-total-display');
-  if(el)el.innerHTML=`<div class="trow"><span>شقق فوج 1</span><span>${at.toLocaleString()} ج</span></div>${at2>0?`<div class="trow"><span>شقق فوج 2</span><span>${at2.toLocaleString()} ج</span></div>`:''}<div class="trow"><span>كراسي إضافية</span><span>${st.toLocaleString()} ج</span></div><div class="trow"><span>داخلية</span><span>${intT.toLocaleString()} ج</span></div><div class="trow disc"><span>خصومات</span><span>- ${(sda+disc).toLocaleString()} ج</span></div><div class="trow big"><span>الإجمالي الجديد</span><span>${total.toLocaleString()} ج</span></div>${discWarn}`;
+  if(el)el.innerHTML=`<div class="trow"><span>شقق ${convTxt(b.convoy)}</span><span>${at.toLocaleString()} ج</span></div>${at2>0?`<div class="trow"><span>شقق ${convTxt(b.convoy2)}</span><span>${at2.toLocaleString()} ج</span></div>`:''}<div class="trow"><span>كراسي إضافية</span><span>${st.toLocaleString()} ج</span></div><div class="trow"><span>داخلية</span><span>${intT.toLocaleString()} ج</span></div><div class="trow disc"><span>خصومات</span><span>- ${(sda+disc).toLocaleString()} ج</span></div><div class="trow big"><span>الإجمالي الجديد</span><span>${total.toLocaleString()} ج</span></div>${discWarn}`;
 }
 async function saveEditBooking(id){
   const b=bookings.find(x=>x.id===id);
@@ -7930,7 +7930,7 @@ async function printReceipt(id){
   const fmtTxt=t=>{if(!t)return'';if(/<[a-z]/i.test(t))return t;return t.replace(/\r/g,'').replace(/\n/g,'<br>');};
   const notesHtml=fmtTxt(settings.notes||m.notes||'');
   const aR=(b.apts||[]).map(a=>`<tr><td style="font-weight:700">${a}</td><td>${APTS[a]?.desc||''}</td><td style="font-weight:700;text-align:left">${((b.aptPrices||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
-  const aR2=(b.apts2||[]).map(a=>`<tr><td style="font-weight:700">${a}</td><td>${APTS[a]?.desc||''} <span style="background:#f9e79f;color:#7d3c98;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">فوج 2</span></td><td style="font-weight:700;text-align:left">${((b.aptPrices2||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
+  const aR2=(b.apts2||[]).map(a=>`<tr><td style="font-weight:700">${a}</td><td>${APTS[a]?.desc||''} <span style="background:#f9e79f;color:#7d3c98;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">${convTxt(b.convoy2)}</span></td><td style="font-weight:700;text-align:left">${((b.aptPrices2||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
   const pR=(b.payments||[]).map(p=>`<tr><td>${p.date||'-'}</td><td style="font-weight:700">${p.amount.toLocaleString()} ج</td><td>${p.payMethod||'-'}</td><td>${p.note||'-'}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center">—</td></tr>';
   const as=(b.seatAssign||[]).filter(s=>s.seatNum).map(s=>s.seatNum).join('، ');
   const as2=(b.seatAssign2||[]).filter(s=>s.seatNum).map(s=>s.seatNum).join('، ');
@@ -8012,8 +8012,8 @@ table{table-layout:fixed;word-wrap:break-word}</style></head><body>
 ${(aR||aR2)?`<div class="sec"><div class="st">الشقق المحجوزة</div><table><thead><tr><th>رقم الشقة</th><th>الوصف</th><th>السعر</th></tr></thead><tbody>${aR}${aR2}</tbody></table></div>`:''}
 <div class="sec"><div class="st">تفاصيل الحساب</div><div class="tot">
   ${(b.aptsTotal||0)>0?`<div class="tr"><span>إجمالي الشقق</span><span style="font-weight:700">${(b.aptsTotal||0).toLocaleString()} ج</span></div>`:''}
-  ${seatsF1>0&&b.convoy2?`<div class="tr" style="color:#117a65"><span>كراسي شقق فوج 1 (${seatsF1} كرسي)</span><span style="font-weight:700">مشمولة</span></div>`:''}
-  ${seatsF2>0?`<div class="tr" style="color:#7d3c98"><span>كراسي شقق فوج 2 (${seatsF2} كرسي)</span><span style="font-weight:700">مشمولة</span></div>`:''}
+  ${seatsF1>0&&b.convoy2?`<div class="tr" style="color:#117a65"><span>كراسي شقق ${convTxt(b.convoy)} (${seatsF1} كرسي)</span><span style="font-weight:700">مشمولة</span></div>`:''}
+  ${seatsF2>0?`<div class="tr" style="color:#7d3c98"><span>كراسي شقق ${convTxt(b.convoy2)} (${seatsF2} كرسي)</span><span style="font-weight:700">مشمولة</span></div>`:''}
   ${(seatsF1>0&&!b.convoy2)?`<div class="tr" style="color:#117a65"><span>كراسي الباص (${seatsF1} كرسي)</span><span style="font-weight:700">مشمولة</span></div>`:''}
   ${extraS>0?`<div class="tr"><span>كراسي إضافية (${extraS} × ${sp} ج)</span><span style="font-weight:700">${(extraS*sp).toLocaleString()} ج</span></div>`:''}
   ${(b.intSeats||0)>0?`<div class="tr" style="color:#7d3c98"><span>كراسي داخلية (${b.intSeats} × ${b.intSeatPrice||0} ج)</span><span style="font-weight:700">${(b.intTotal||0).toLocaleString()} ج</span></div>`:''}
