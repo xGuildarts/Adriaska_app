@@ -3042,8 +3042,6 @@ async function _doPoll(){
   if(!currentUser||!navigator.onLine)return;
   // لو الـ tab مخفي مترحش egress عبثاً
   if(document.hidden)return;
-  // المستخدم المقيّد بآخر 10 — منوقفله الـ polling بالكامل لتقليل الـ egress
-  if(currentUser.role!=='admin'&&userHasBkLimit10(currentUser))return;
   const d=document.getElementById('sdot'),t=document.getElementById('stxt');
   try{
     if(d)d.className='sdot s';if(t)t.textContent='جاري التحديث...';
@@ -3982,10 +3980,11 @@ async function resetConn(){if(!await confirm('إعادة الإعداد؟'))retu
 // INIT APP
 // ============================================================
 // ===== جلب البيانات "الثقيلة" (حجوزات/حسابات/سجل/حجوزات فنادق) — بعد ما نعرف المستخدم =====
-// لو المستخدم عليه علامة BK_LIMIT10_FLAG بيتم تحديد كل الجلب على آخر 10 فقط (توفير Egress حقيقي من Supabase)
+// ملحوظة: لازم نجيب كل البيانات دايماً (مش حسب صلاحية آخر 10) لأن شبكة الشقق/جدول الأفواج
+// محتاجة تعرف كل الحجوزات في كل الأفواج عشان تحدد المتاح والمحجوز صح. قيد "آخر 10" بيتطبق
+// بس على العرض في جدول العملاء (renderClients) مش على الجلب نفسه — زي نسخة الـ web بالظبط.
 async function loadHeavyData(user){
-  const limited=!!(user&&user.role!=='admin'&&userHasBkLimit10(user));
-  const BK_LIMIT=limited?10:1500,ACC_LIMIT=limited?10:1500,LOG_LIMIT=limited?10:150,HBK_LIMIT=limited?10:1000;
+  const BK_LIMIT=1500,ACC_LIMIT=1500,LOG_LIMIT=150,HBK_LIMIT=1000;
   // ===== Egress optimization: جيب الأعمدة الخفيفة فقط =====
   // الأعمدة الثقيلة (payments, seat_assign, mgr_snap, notes...) تتحمل on-demand في viewClient
   const BK_COLS='id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at';
@@ -4001,11 +4000,9 @@ async function loadHeavyData(user){
   accEntries=(accs||[]).map(mA);
   activityLog=(logs||[]).map(mL);
   hotelBookings=(Array.isArray(hbks)?hbks:[]).map(r=>typeof mHB==='function'?mHB(r):r);
-  if(!limited){
-    // تحذير لو اقتربنا من الـ limit
-    if((bks||[]).length>=BK_LIMIT)console.warn('[MTR] تحذير: الحجوزات وصلت الـ limit ('+BK_LIMIT+') — بعض البيانات القديمة ممكن تكون ناقصة');
-    if((accs||[]).length>=ACC_LIMIT)console.warn('[MTR] تحذير: القيود المحاسبية وصلت الـ limit ('+ACC_LIMIT+')');
-  }
+  // تحذير لو اقتربنا من الـ limit
+  if((bks||[]).length>=BK_LIMIT)console.warn('[MTR] تحذير: الحجوزات وصلت الـ limit ('+BK_LIMIT+') — بعض البيانات القديمة ممكن تكون ناقصة');
+  if((accs||[]).length>=ACC_LIMIT)console.warn('[MTR] تحذير: القيود المحاسبية وصلت الـ limit ('+ACC_LIMIT+')');
 }
 async function initApp(){
   document.getElementById('lod-msg').textContent='جاري تحميل البيانات...';
@@ -5247,18 +5244,22 @@ function renderClients(resetPage=true){
     const mp=!pf||(b.partyType||'client')===pf;
     return mq&&ms&&mp;
   }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  let fLim=f;
+  if(currentUser&&currentUser.role!=='admin'&&userHasBkLimit10(currentUser)){
+    fLim=f.slice(0,10); // عرض آخر 10 حجوزات فقط في الجدول لهذا المستخدم — العرض فقط، باقي الميزات (شبكة الشقق..) بتستخدم البيانات الكاملة
+  }
   const tb=document.getElementById('cl-tbl');
   // pagination footer
-  const totalPages=Math.ceil(f.length/_CL_PAGE_SIZE)||1;
+  const totalPages=Math.ceil(fLim.length/_CL_PAGE_SIZE)||1;
   let pager=document.getElementById('cl-pager');
   if(!pager){pager=document.createElement('div');pager.id='cl-pager';pager.style.cssText='display:flex;align-items:center;justify-content:center;gap:8px;padding:.65rem;font-family:Cairo,sans-serif;font-size:13px;flex-wrap:wrap';tb.closest('.tbl-wrap')?.after(pager);}
   const start=_clPage*_CL_PAGE_SIZE,end=start+_CL_PAGE_SIZE;
-  const pageItems=f.slice(start,end);
-  pager.innerHTML=f.length>_CL_PAGE_SIZE?`
+  const pageItems=fLim.slice(start,end);
+  pager.innerHTML=fLim.length>_CL_PAGE_SIZE?`
     <button onclick="clPageGo(-1)" ${_clPage===0?'disabled':''} style="padding:4px 12px;border:1px solid var(--bd2);border-radius:7px;cursor:pointer;font-family:Cairo,sans-serif;background:var(--sf)">‹ السابق</button>
-    <span style="color:var(--tx2)">صفحة ${_clPage+1} من ${totalPages} · إجمالي ${f.length} حجز</span>
+    <span style="color:var(--tx2)">صفحة ${_clPage+1} من ${totalPages} · إجمالي ${fLim.length} حجز</span>
     <button onclick="clPageGo(1,${totalPages})" ${_clPage>=totalPages-1?'disabled':''} style="padding:4px 12px;border:1px solid var(--bd2);border-radius:7px;cursor:pointer;font-family:Cairo,sans-serif;background:var(--sf)">التالي ›</button>
-  `:`<span style="color:var(--tx3);font-size:12px">${f.length} حجز</span>`;
+  `:`<span style="color:var(--tx3);font-size:12px">${fLim.length} حجز</span>`;
   if(!pageItems.length){tb.innerHTML='<tr><td colspan="14" style="text-align:center;color:var(--tx3);padding:2rem">لا توجد نتائج</td></tr>';return;}
   tb.innerHTML=pageItems.map(b=>{
     return `<tr>
