@@ -3355,6 +3355,29 @@ async function exportBackupJSON(){
   if(typeof toast==='function')toast('✅ نسخة احتياطية كاملة — '+total+' سجل · حجوزات+حسابات+يوزرات+فنادق+تاسكات+أدوار+أسعار+شروط+إعدادات','success',6000);
 }
 
+// ── تنظيف التواريخ قبل الإرسال لـ Supabase ──────────────────────────────
+// بيحوّل أي قيمة timestamp لـ ISO string صح، أو null لو مش صالح
+function fixTs(val){
+  if(!val)return null;
+  if(typeof val==='string'){
+    // أرقام عربية → لاتينية
+    val=val.replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    // صيغة YYYY/MM/DD أو YYYY-MM-DD بدون وقت → أضف وقت
+    if(/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(val.trim())){
+      val=val.trim().replace(/\//g,'-')+'T00:00:00.000Z';
+    }
+    // صيغة DD/MM/YYYY
+    const m=val.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(.*)$/);
+    if(m)val=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}${m[4]||'T00:00:00.000Z'}`;
+  }
+  try{
+    const d=new Date(val);
+    if(isNaN(d.getTime()))return null;
+    return d.toISOString();
+  }catch(e){return null;}
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 async function importBackupJSON(){
   if(!await confirm('⚠️ استيراد نسخة احتياطية سيستبدل كل البيانات الحالية على Supabase.\n\nهل أنت متأكد؟'))return;
   const input=document.createElement('input');
@@ -3456,7 +3479,12 @@ async function importBackupJSON(){
           }
           if(!rowsToInsert.length)return;
           const countBefore=await _countRows(table);
-          const cleanRows=rowsToInsert.map(({id,...rest})=>rest); // نحتفظ بـ created_at الأصلي
+          // تنظيف شامل لكل حقول الـ timestamp قبل الإرسال
+          const TS_FIELDS=['created_at','last_edit_at','remind_at','done_at','snoozed_until'];
+          const cleanRows=rowsToInsert.map(({id,...rest})=>{
+            TS_FIELDS.forEach(f=>{if(f in rest)rest[f]=fixTs(rest[f]);});
+            return rest;
+          }); // نحتفظ بـ created_at الأصلي
           let insertedOk=0;
           for(let i=0;i<cleanRows.length;i+=CHUNK){
             const chunk=cleanRows.slice(i,i+CHUNK);
@@ -3540,6 +3568,9 @@ async function importBackupJSON(){
           for(let ri=0;ri<rowsToInsert.length;ri++){
             const row=rowsToInsert[ri];
             const {id:oldId,...rowRest}=row;
+            // تنظيف timestamps في upsertAllMapped أيضاً
+            const TS_FIELDS_M=['created_at','last_edit_at','remind_at','done_at','snoozed_until'];
+            TS_FIELDS_M.forEach(f=>{if(f in rowRest)rowRest[f]=fixTs(rowRest[f]);});
             if(ri%25===0)_updProg(null,null,table+': '+ri+' / '+rowsToInsert.length);
             try{
               const res=await fetch(SB_URL+'/rest/v1/'+table,{
@@ -3630,9 +3661,9 @@ async function importBackupJSON(){
             mgr_snap:b.mgrSnap,created_by:b.createdBy,party_type:b.partyType,
             supplier_id:fixedSupplierId,disc_reason:b.discReason,
             adults:b.adults,children:b.children,status:b.status,
-            last_edit_by:b.lastEditBy,last_edit_at:b.lastEditAt,
+            last_edit_by:b.lastEditBy,last_edit_at:fixTs(b.lastEditAt||b.last_edit_at),
             bus_idx:b.busIdx,collect_via:fixedCollectVia,collect_via_seat_cost:b.collectViaSeatCost||0,
-            created_at:b.createdAt||b.created_at||null
+            created_at:fixTs(b.createdAt||b.created_at)
           };
         });
         _updProg(25,'جاري استيراد الحجوزات...','الحجوزات: '+(dbBookings.length)+' سجل');
@@ -3655,7 +3686,7 @@ async function importBackupJSON(){
             id:a.id,type:a.type,op:a.op,amount:a.amount,entry_date:a.date,
             description:a.desc,client_name:a.clientName,category:a.category,
             booking_ref:fixedBookingRef,booking_pay_ref:a.bookingPayRef,supplier_id:fixedSupId,
-            created_at:a.createdAt||a.created_at||null
+            created_at:fixTs(a.createdAt||a.created_at)
           };
         });
         _updProg(40,'جاري استيراد القيود المحاسبية...','القيود: '+(dbAcc.length)+' سجل');
@@ -3679,7 +3710,7 @@ async function importBackupJSON(){
             created_by:hb.createdBy||'',
             bus_seats:hb.busSeats||0,bus_seat_price:hb.busSeatPrice||0,transport_total:hb.transportTotal||0,
             pickup:hb.pickup||'',dropoff:hb.dropoff||'',transport_note:hb.transportNote||'',
-            created_at:hb.createdAt||hb.created_at||null
+            created_at:fixTs(hb.createdAt||hb.created_at)
           };
         });
         const hotelBookingIdMap=await upsertAllMapped('htl_bookings',dbHotelBookings);
@@ -3713,7 +3744,7 @@ async function importBackupJSON(){
           name:u.name||'',
           role:u.role||'viewer',
           custom_perms:Array.isArray(u.custom_perms)?u.custom_perms:(u.custom_perms||[]),
-          created_at:u.created_at||null
+          created_at:fixTs(u.created_at)
         }));
         // ===== استيراد المستخدمين — INSERT كل يوزر لوحده =====
         if(dbUsers.length){
@@ -3754,7 +3785,13 @@ async function importBackupJSON(){
         // ===== conv_expenses =====
         if((data.convExpenses||[]).length){
           _updProg(86,'جاري استيراد مصاريف الأفواج...','');
-          await upsertAll('mtr_conv_expenses',data.convExpenses||[]);
+          const dbConvExp=(data.convExpenses||[]).map(e=>({
+            id:e.id,convoy_num:e.convoy_num||e.convoyNum,category:e.category||'other',
+            label:e.label||'',amount:e.amount||0,notes:e.notes||'',
+            created_by:e.created_by||e.createdBy||'',
+            created_at:fixTs(e.created_at||e.createdAt)
+          }));
+          await upsertAll('mtr_conv_expenses',dbConvExp);
         }
         // ===== closing_expenses (مصاريف تقفيلة الفوج: باص/برج/مورد) =====
         if((data.closingExpenses||[]).length){
@@ -3776,15 +3813,15 @@ async function importBackupJSON(){
             return{
               id:t.id,title:t.title||'',notes:t.notes||'',status:t.status||'open',
               priority:t.priority||'normal',
-              remind_at:t.remind_at||t.remindAt||null,
+              remind_at:fixTs(t.remind_at||t.remindAt),
               remind_before_min:t.remind_before_min||t.remindBeforeMin||30,
               client_name:t.client_name||t.clientName||'',
               booking_id:fixedBId,
               created_by:t.created_by||t.createdBy||'',
               assigned_to:t.assigned_to||t.assignedTo||'',
-              done_at:t.done_at||t.doneAt||null,
-              snoozed_until:t.snoozed_until||t.snoozedUntil||null,
-              created_at:t.created_at||null
+              done_at:fixTs(t.done_at||t.doneAt),
+              snoozed_until:fixTs(t.snoozed_until||t.snoozedUntil),
+              created_at:fixTs(t.created_at||t.createdAt)
             };
           });
           _updProg(92,'جاري استيراد التاسكات...','');
