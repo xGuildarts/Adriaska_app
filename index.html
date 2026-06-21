@@ -1651,6 +1651,23 @@ let PM_TYPES=['انستا باي','خزينة (كاش)','حساب بنكي شر�
 let EXP_CATS=['مصاريف نقل','مصاريف عمومية','رواتب وأجور'];
 const SEAT_COLORS=['#1a5276','#117a65','#7d3c98','#c0392b','#d68910','#1abc9c','#e67e22','#2980b9','#8e44ad','#27ae60','#922b21','#148f77','#6c3483','#b7950b','#1f618d'];
 const MAX_SEATS=49;
+const BK_LIMIT10_FLAG='_bklimit10'; // علامة خاصة تُضاف لمصفوفة custom_perms لتقييد المستخدم على آخر 10 من كل بيانات الـ egress
+function userHasBkLimit10(u){return !!(u&&(u.custom_perms||[]).includes(BK_LIMIT10_FLAG));}
+async function toggleBkLimit10(uid,checked){
+  const u=users.find(x=>x.id===uid);if(!u||u.role==='admin')return;
+  let cur=[...(u.custom_perms||ROLE_DEFAULTS[u.role]||[])];
+  cur=cur.filter(p=>p!==BK_LIMIT10_FLAG);
+  if(checked)cur.push(BK_LIMIT10_FLAG);
+  try{
+    await sbFetch('mtr_users','PATCH',{custom_perms:cur},`?id=eq.${uid}`);
+    u.custom_perms=cur;
+    if(currentUser&&currentUser.id===uid){
+      currentUser.custom_perms=cur;
+      toast&&toast(checked?'تم التفعيل — سيتم تطبيقه عند تسجيل الدخول مرة أخرى':'تم الإلغاء — سيتم تطبيقه عند تسجيل الدخول مرة أخرى','info');
+    }
+    renderUsers();
+  }catch(e){alert('فشل: '+e.message);}
+}
 const ALL_PERMS={'add_booking':'إضافة حجز','edit_booking':'تعديل حجز','delete_booking':'حذف حجز','add_client':'إضافة عميل','add_supplier':'إضافة مورد','view_accounts':'عرض الحسابات','edit_accounts':'تعديل قيود','delete_accounts':'حذف قيود','approve_payments':'اعتماد دفعات','transfer_accounts':'تحويل بين الحسابات','view_log':'سجل النشاط','manage_users':'إدارة المستخدمين','view_bus':'عرض الباص','edit_bus':'تعديل مقاعد الباص','print_bus':'طباعة قائمة الباص','settings':'الإعدادات العامة','manage_prices':'إدارة الأسعار','view_design':'إدارة التصميم','view_reports':'التقارير','print_receipt':'طباعة إيصالات','manage_categories':'إدارة فئات الحسابات','manage_locks':'تقفيل الأفواج','bypass_lock':'تجاوز قفل الفوج','view_conv_accounts':'حسابات الأفواج','view_closing':'تقفيلة الفوج','view_remainings':'كشف المتبقيات','view_reps':'تقرير المندوبين','view_receipt_voucher':'إذن استلام نقدية','view_bulk_voucher':'إذن جماعي','manage_system':'إدارة النظام (نسخ احتياطي + اتصال)'};
 const ROLE_DEFAULTS={admin:Object.keys(ALL_PERMS),bookings:['add_booking','edit_booking','add_client','view_bus','edit_bus','print_receipt','view_closing','view_receipt_voucher','view_bulk_voucher'],accounts:['view_accounts','edit_accounts','delete_accounts','approve_payments','transfer_accounts','view_reports','view_remainings','view_conv_accounts','view_receipt_voucher','view_bulk_voucher','view_closing'],operations:['view_bus','edit_bus','print_bus','view_reports','view_closing'],viewer:['view_bus','view_reports']};
 
@@ -3013,6 +3030,8 @@ async function _doPoll(){
   if(!currentUser||!navigator.onLine)return;
   // لو الـ tab مخفي مترحش egress عبثاً
   if(document.hidden)return;
+  // المستخدم المقيّد بآخر 10 — منوقفله الـ polling بالكامل لتقليل الـ egress
+  if(currentUser.role!=='admin'&&userHasBkLimit10(currentUser))return;
   const d=document.getElementById('sdot'),t=document.getElementById('stxt');
   try{
     if(d)d.className='sdot s';if(t)t.textContent='جاري التحديث...';
@@ -3923,40 +3942,60 @@ async function resetConn(){if(!await confirm('إعادة الإعداد؟'))retu
 // ============================================================
 // INIT APP
 // ============================================================
-async function initApp(){
-  document.getElementById('lod-msg').textContent='جاري تحميل البيانات...';
-  const BK_LIMIT=1500,ACC_LIMIT=1500,HBK_LIMIT=1000;
-  // ===== Egress optimization: جيب الأعمدة الخفيفة فقط في initApp =====
+// ===== جلب البيانات "الثقيلة" (حجوزات/حسابات/سجل/حجوزات فنادق) — بعد ما نعرف المستخدم =====
+// لو المستخدم عليه علامة BK_LIMIT10_FLAG بيتم تحديد كل الجلب على آخر 10 فقط (توفير Egress حقيقي من Supabase)
+async function loadHeavyData(user){
+  const limited=!!(user&&user.role!=='admin'&&userHasBkLimit10(user));
+  const BK_LIMIT=limited?10:1500,ACC_LIMIT=limited?10:1500,LOG_LIMIT=limited?10:150,HBK_LIMIT=limited?10:1000;
+  // ===== Egress optimization: جيب الأعمدة الخفيفة فقط =====
   // الأعمدة الثقيلة (payments, seat_assign, mgr_snap, notes...) تتحمل on-demand في viewClient
   const BK_COLS='id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at';
   const ACC_COLS='id,type,op,amount,entry_date,description,client_name,category,booking_ref,booking_pay_ref,supplier_id,created_at';
   const HBK_COLS='id,name,phone,destination,hotel_id,hotel_name,checkin,checkout,nights,room_type,rooms,price_per_night,adults,children,disc,total,paid,remaining,status,sales_rep,created_by,bus_seats,bus_seat_price,transport_total,pickup,dropoff,created_at';
-  const USR_COLS='id,username,password,name,role,custom_perms,created_at';
-  const [bks,accs,logs,usrs,setts,sups,htls,hbks]=await Promise.all([
+  const [bks,accs,logs,hbks]=await Promise.all([
     sbFetch('mtr_bookings','GET',null,`?order=created_at.desc&limit=${BK_LIMIT}&select=${BK_COLS}`),
     sbFetch('mtr_acc','GET',null,`?order=id.desc&limit=${ACC_LIMIT}&select=${ACC_COLS}`),
-    sbFetch('mtr_log','GET',null,'?order=id.desc&limit=150'),
-    sbFetch('mtr_users','GET',null,`?order=id.asc&select=${USR_COLS}`),
-    sbFetch('mtr_settings','GET',null,'?id=eq.1'),
-    sbFetch('mtr_suppliers','GET',null,'?order=name.asc').catch(()=>[]),
-    sbFetch('htl_hotels','GET',null,'?order=name.asc').catch(()=>[]),
+    sbFetch('mtr_log','GET',null,`?order=id.desc&limit=${LOG_LIMIT}`),
     sbFetch('htl_bookings','GET',null,`?order=id.desc&limit=${HBK_LIMIT}&select=${HBK_COLS}`).catch(()=>[]),
   ]);
   bookings=(bks||[]).map(mB);
   accEntries=(accs||[]).map(mA);
   activityLog=(logs||[]).map(mL);
-  // تحذير لو اقتربنا من الـ limit
-  if((bks||[]).length>=BK_LIMIT)console.warn('[MTR] تحذير: الحجوزات وصلت الـ limit ('+BK_LIMIT+') — بعض البيانات القديمة ممكن تكون ناقصة');
-  if((accs||[]).length>=ACC_LIMIT)console.warn('[MTR] تحذير: القيود المحاسبية وصلت الـ limit ('+ACC_LIMIT+')');
+  hotelBookings=(Array.isArray(hbks)?hbks:[]).map(r=>typeof mHB==='function'?mHB(r):r);
+  if(!limited){
+    // تحذير لو اقتربنا من الـ limit
+    if((bks||[]).length>=BK_LIMIT)console.warn('[MTR] تحذير: الحجوزات وصلت الـ limit ('+BK_LIMIT+') — بعض البيانات القديمة ممكن تكون ناقصة');
+    if((accs||[]).length>=ACC_LIMIT)console.warn('[MTR] تحذير: القيود المحاسبية وصلت الـ limit ('+ACC_LIMIT+')');
+  }
+}
+async function initApp(){
+  document.getElementById('lod-msg').textContent='جاري تحميل البيانات...';
+  // ===== المرحلة الأولى: بيانات خفيفة فقط (مستخدمين/إعدادات/موردين/فنادق) قبل تحديد هوية المستخدم =====
+  const USR_COLS='id,username,password,name,role,custom_perms,created_at';
+  const [usrs,setts,sups,htls]=await Promise.all([
+    sbFetch('mtr_users','GET',null,`?order=id.asc&select=${USR_COLS}`),
+    sbFetch('mtr_settings','GET',null,'?id=eq.1'),
+    sbFetch('mtr_suppliers','GET',null,'?order=name.asc').catch(()=>[]),
+    sbFetch('htl_hotels','GET',null,'?order=name.asc').catch(()=>[]),
+  ]);
   users=usrs||[];
   suppliers=sups||[];
   hotels=htls||[];
-  hotelBookings=(Array.isArray(hbks)?hbks:[]).map(r=>typeof mHB==='function'?mHB(r):r);
   if(setts&&setts[0])settings=mS(setts[0]);
   rebuildAPTS(); // بعد ما اتحملت الإعدادات من Supabase (فيها extra_apts)
+  // Restore session — لو فيه جلسة محفوظة، نجيب البيانات الثقيلة بالحد المناسب لهذا المستخدم فقط
+  try{
+    const s=JSON.parse(sessionStorage.getItem('mtr_sess')||'null');
+    if(s&&s.username){
+      const f=users.find(u=>u.username===s.username&&u.password===(s.passwordHash||s.password));
+      if(f){
+        await loadHeavyData(f);
+        loginUser(f);
+        return;
+      }
+    }
+  }catch(e){}
   hideAll();
-  // Restore session
-  try{const s=JSON.parse(sessionStorage.getItem('mtr_sess')||'null');if(s&&s.username){const f=users.find(u=>u.username===s.username&&u.password===(s.passwordHash||s.password));if(f){loginUser(f);return;}}}catch(e){}
   show('login-pg');updateLogoDsp();
 }
 
@@ -4016,6 +4055,9 @@ async function doLogin(){
   }
   if(!f){document.getElementById('login-err').style.display='block';return;}
   document.getElementById('login-err').style.display='none';
+  hideAll();show('lod');
+  document.getElementById('lod-msg').textContent='جاري تحميل البيانات...';
+  await loadHeavyData(f);
   addLog('تسجيل دخول','login',`${f.name} · دور: ${{admin:'GM',bookings:'Bookings',accounts:'Acountant',operations:'Oerations',viewer:'Viewer'}[f.role]||f.role}`);
   loginUser(f);
 }
@@ -9119,12 +9161,21 @@ window.renderUsers=function(){
             ${u.name}
             <button onclick="openEditDisplayNameModal(${u.id})" title="تعديل الاسم الظاهر" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--tx3);padding:0 2px;line-height:1" onmouseover="this.style.color='var(--pr)'" onmouseout="this.style.color='var(--tx3)'">✎</button>
           </div>
-          <div style="font-size:11px;color:var(--tx2)">${u.username} · ${u.role}</div>
+          <div style="font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span>${u.username} ·</span>
+            ${u.username!=='admin'?`<select onchange="changeUserRole(${u.id},this.value)" style="font-size:11px;padding:1px 4px;border-radius:6px;border:1px solid var(--bd2);background:var(--sf)">
+              ${Object.keys(typeof customRoles!=='undefined'?{...ROLE_DEFAULTS,...customRoles}:ROLE_DEFAULTS).map(r=>`<option value="${r}" ${r===u.role?'selected':''}>${typeof getRoleLabel==='function'?getRoleLabel(r):r}</option>`).join('')}
+            </select>`:`<span>${u.role}</span>`}
+          </div>
           <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
             <span style="font-size:11px;color:var(--tx3)">كلمة المرور:</span>
             <span id="pw-${u.id}" style="font-size:12px;font-family:monospace">••••••</span>
             <button class="btn btn-sm" onclick="openUserCredsModal(${u.id})" style="padding:2px 6px;font-size:10px">تعديل بيانات الدخول</button>
           </div>
+          ${u.username!=='admin'?`<label style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;font-size:11px;cursor:pointer;background:${userHasBkLimit10(u)?'var(--wnl)':'var(--sf2)'};border:1px solid ${userHasBkLimit10(u)?'var(--wn)':'var(--bd)'};border-radius:7px;padding:3px 8px">
+            <input type="checkbox" ${userHasBkLimit10(u)?'checked':''} onchange="toggleBkLimit10(${u.id},this.checked)" style="width:13px;height:13px">
+            🔒 يشوف آخر 10 حجوزات/قيود فقط (تقليل Egress)
+          </label>`:''}
         </div>
         ${u.username!=='admin'?`<button class="btn btn-d btn-sm" onclick="removeUser(${u.id})">حذف</button>`:'<span class="badge b-pu">محمي</span>'}
       </div>
@@ -9223,8 +9274,12 @@ window.saveDisplayName = async function(id){
 
 window.changeUserRole = async function(id, newRole){
   try{
-    await sbFetch('mtr_users','PATCH',{role:newRole},`?id=eq.${id}`);
-    const u=users.find(x=>x.id===id);if(u){u.role=newRole;u.custom_perms=null;}
+    const u=users.find(x=>x.id===id);
+    const hadLimit=u&&userHasBkLimit10(u);
+    const newPerms=hadLimit?[BK_LIMIT10_FLAG]:null;
+    await sbFetch('mtr_users','PATCH',{role:newRole,custom_perms:newPerms},`?id=eq.${id}`);
+    if(u){u.role=newRole;u.custom_perms=newPerms;}
+    if(currentUser?.id===id){currentUser.role=newRole;currentUser.custom_perms=newPerms;}
     renderUsers();
   }catch(e){alert('فشل: '+e.message);}
 };
@@ -11911,7 +11966,8 @@ let _editingTaskId=null;
 
 async function loadTasks(){
   try{
-    const rows=await sbFetch('mtr_tasks','GET',null,'?order=id.desc&limit=500');
+    const limited=currentUser&&currentUser.role!=='admin'&&userHasBkLimit10(currentUser);
+    const rows=await sbFetch('mtr_tasks','GET',null,`?order=id.desc&limit=${limited?10:500}`);
     tasks=(rows||[]).map(_mapTask);
     _startReminderLoop();
     _updateTasksBadge();
