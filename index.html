@@ -11456,7 +11456,7 @@ function _mapExp(r){
 function _calcConvoyRevenue(cn){
   const bks = bookings.filter(b=>b.convoy===cn && b.partyType!=='supplier');
   const SP = 600, IP = 200; // أسعار افتراضية — بتجي من CONVOYS لو موجودة
-  let aptRev=0, busRev=0, intRev=0;
+  let aptRev=0, busRev=0, intRev=0, totalDisc=0;
   let aptCount=0, busSeatsCount=0, intSeatsCount=0;
   bks.forEach(b=>{
     const baseSeats=(b.apts||[]).reduce((s,a)=>{const inf=APTS[a];return s+(inf?(inf.type==='single'?2:4):0);},0);
@@ -11471,9 +11471,10 @@ function _calcConvoyRevenue(cn){
     aptRev+=aptNet; busRev+=busTot; intRev+=intTot;
     busSeatsCount+=busSeats; intSeatsCount+=intSeats;
     aptCount+=(b.apts||[]).length;
+    totalDisc+=(b.seatDiscAmt||0)+(b.disc||0);
   });
   return {cn, clientCount:bks.length, aptCount, aptRev, busSeatsCount, busRev, intSeatsCount, intRev,
-    totalRev: aptRev+busRev+intRev};
+    totalDisc, totalRev: aptRev+busRev+intRev};
 }
 
 function _getConvExpenses(cn){
@@ -11539,6 +11540,7 @@ CREATE POLICY "allow_all" ON mtr_conv_expenses FOR ALL USING (true) WITH CHECK (
     busProfit: seasonData.reduce((s,d)=>s+d.busProfit,0),
     intProfit: seasonData.reduce((s,d)=>s+d.intProfit,0),
     netProfit: seasonData.reduce((s,d)=>s+d.netProfit,0),
+    totalDisc: seasonData.reduce((s,d)=>s+(d.totalDisc||0),0),
   };
 
   const n=v=>`${(v||0).toLocaleString('ar-EG')} ج`;
@@ -11552,6 +11554,7 @@ CREATE POLICY "allow_all" ON mtr_conv_expenses FOR ALL USING (true) WITH CHECK (
     <div class="stat" style="border-top-color:#1a5276"><div class="stat-label">إجمالي إيرادات الباص</div><div class="stat-val" style="color:#1a5276">${n(seasonTotals.busRev)}</div></div>
     <div class="stat purple"><div class="stat-label">إجمالي الكراسي الداخلي</div><div class="stat-val" style="color:var(--pu)">${n(seasonTotals.intRev)}</div></div>
     <div class="stat gold"><div class="stat-label">إجمالي الإيرادات</div><div class="stat-val" style="color:var(--gd)">${n(seasonTotals.totalRev)}</div></div>
+    <div class="stat" style="border-top-color:#c0392b"><div class="stat-label">إجمالي الخصومات للعملاء</div><div class="stat-val" style="color:#c0392b">${n(seasonTotals.totalDisc)}</div></div>
     <div class="stat red"><div class="stat-label">إجمالي المصاريف</div><div class="stat-val" style="color:var(--dn)">${n(seasonTotals.totalExp)}</div></div>
     <div class="stat" style="border-top-color:${profColor(seasonTotals.netProfit)}"><div class="stat-label">صافي الموسم</div><div class="stat-val" style="color:${profColor(seasonTotals.netProfit)}">${n(seasonTotals.netProfit)}</div></div>
   </div>`;
