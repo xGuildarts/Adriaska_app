@@ -513,6 +513,7 @@ tr:hover td{background:#f5f8fc}
   <div class="step"><strong>4. للتحديث الجديد (فوجين)</strong>شغّل: <code style="font-size:10px">ALTER TABLE mtr_bookings ADD COLUMN IF NOT EXISTS convoy2 integer; ALTER TABLE mtr_bookings ADD COLUMN IF NOT EXISTS seat_assign2 jsonb DEFAULT '[]';</code></div>
   <div class="step"><strong>5. للتحديث الجديد (جهة التحصيل)</strong>شغّل: <code style="font-size:10px">ALTER TABLE mtr_bookings ADD COLUMN IF NOT EXISTS collect_via text;</code></div>
   <div class="step"><strong>6. للتحديث الجديد (سعر كرسي المورد)</strong>شغّل: <code style="font-size:10px">ALTER TABLE mtr_bookings ADD COLUMN IF NOT EXISTS collect_via_seat_cost numeric DEFAULT 0;</code></div>
+  <div class="step"><strong>7. للتحديث الجديد (مُدخِل الحجز)</strong>شغّل: <code style="font-size:10px">ALTER TABLE mtr_bookings ADD COLUMN IF NOT EXISTS entered_by text DEFAULT '';</code></div>
   <div class="step"><strong>7. للتحديث الجديد (مصاريف تقفيلة الفوج)</strong>شغّل:
     <code style="font-size:10px;display:block;direction:ltr;text-align:left;white-space:pre-wrap">CREATE TABLE IF NOT EXISTS mtr_closing_expenses (
   id bigint generated always as identity primary key,
@@ -2153,7 +2154,7 @@ async function doVoucherAction(bookingId, type, action){
 </div>
 <div class="sig-row">
   <div class="sig-box">توقيع ${isReceipt?'المُسلِّم':'المستلم'}<br><span style="font-weight:700;color:#1a2535">${b.name}</span></div>
-  <div class="sig-box">توقيع المسؤول<br><span style="font-weight:700;color:#1a2535">${b.createdBy||currentUser?.name||'—'}</span></div>
+  <div class="sig-box">توقيع المسؤول<br><span style="font-weight:700;color:#1a2535">${b.createdBy||'—'}</span></div>
   <div class="sig-box">ختم الشركة</div>
 </div>
 <script>window.onload=()=>setTimeout(()=>window.print(),500)<\/script>
@@ -2225,7 +2226,7 @@ async function printPaymentVoucher(bookingId, payIdx){
 </div>
 <div class="sig-row">
   <div class="sig-box">توقيع ${isReceipt?'المُسلِّم':'المستلم'}<br><span style="font-weight:700;color:#1a2535">${b.name}</span></div>
-  <div class="sig-box">توقيع المسؤول<br><span style="font-weight:700;color:#1a2535">${b.createdBy||currentUser?.name||'—'}</span></div>
+  <div class="sig-box">توقيع المسؤول<br><span style="font-weight:700;color:#1a2535">${b.createdBy||'—'}</span></div>
   <div class="sig-box">ختم الشركة</div>
 </div>
 <script>window.onload=()=>setTimeout(()=>window.print(),500)<\/script>
@@ -2902,7 +2903,7 @@ function doAutoExportBackup(){
       <td>${b.checkin}</td><td>${b.checkout}</td>
       <td>${(b.apts||[]).join(', ')}</td>
       <td>${b.total.toLocaleString()}</td><td>${b.paid.toLocaleString()}</td><td>${b.remaining.toLocaleString()}</td>
-      <td>${b.status}</td><td>${b.createdBy||''}</td>
+      <td>${b.status}</td><td>${b.createdBy||''}${b.enteredBy&&b.enteredBy!==b.createdBy?'<br><span style="font-size:10px;color:var(--tx3)">📝'+b.enteredBy+'</span>':''}</td>
       <td>${(b.payments||[]).map(p=>`${p.date}:${p.amount}ج(${p.payMethod})`).join(' | ')}</td>
     </tr>`).join('');
     const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -3053,7 +3054,7 @@ async function _doPoll(){
         const idx=bookings.findIndex(b=>b.id===r.id);
         if(idx<0){
           // حجز جديد — جيب بياناته الكاملة الخفيفة
-          sbFetch('mtr_bookings','GET',null,`?id=eq.${r.id}&select=id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at`)
+          sbFetch('mtr_bookings','GET',null,`?id=eq.${r.id}&select=id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,entered_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at`)
             .then(rows=>{if(rows&&rows[0]){const _nb=mB(rows[0]);bookings.unshift(_nb);_busSeatsLoadedConvoys.delete(_nb.convoy);if(_nb.convoy2)_busSeatsLoadedConvoys.delete(_nb.convoy2);markAllTabsDirty();if(_activeTab==='dash')renderDash();else if(_activeTab==='clients')renderClients();}})
             .catch(()=>{});
           changed=true;
@@ -3658,7 +3659,7 @@ async function importBackupJSON(){
             disc:b.disc,total:b.total,paid:b.paid,remaining:b.remaining,
             payments:b.payments,notes:b.notes,seat_note:b.seatNote,
             seat_assign:b.seatAssign,seat_assign2:b.seatAssign2,
-            mgr_snap:b.mgrSnap,created_by:b.createdBy,party_type:b.partyType,
+            mgr_snap:b.mgrSnap,created_by:b.createdBy,entered_by:b.enteredBy||'',party_type:b.partyType,
             supplier_id:fixedSupplierId,disc_reason:b.discReason,
             adults:b.adults,children:b.children,status:b.status,
             last_edit_by:b.lastEditBy,last_edit_at:fixTs(b.lastEditAt||b.last_edit_at),
@@ -3788,7 +3789,7 @@ async function importBackupJSON(){
           const dbConvExp=(data.convExpenses||[]).map(e=>({
             id:e.id,convoy_num:e.convoy_num||e.convoyNum,category:e.category||'other',
             label:e.label||'',amount:e.amount||0,notes:e.notes||'',
-            created_by:e.created_by||e.createdBy||'',
+            created_by:e.created_by||e.createdBy||'',entered_by:e.entered_by||e.enteredBy||'',
             created_at:fixTs(e.created_at||e.createdAt)
           }));
           await upsertAll('mtr_conv_expenses',dbConvExp);
@@ -3987,7 +3988,7 @@ async function loadHeavyData(user){
   const BK_LIMIT=1500,ACC_LIMIT=1500,LOG_LIMIT=150,HBK_LIMIT=1000;
   // ===== Egress optimization: جيب الأعمدة الخفيفة فقط =====
   // الأعمدة الثقيلة (payments, seat_assign, mgr_snap, notes...) تتحمل on-demand في viewClient
-  const BK_COLS='id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at';
+  const BK_COLS='id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,entered_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at';
   const ACC_COLS='id,type,op,amount,entry_date,description,client_name,category,booking_ref,booking_pay_ref,supplier_id,created_at';
   const HBK_COLS='id,name,phone,destination,hotel_id,hotel_name,checkin,checkout,nights,room_type,rooms,price_per_night,adults,children,disc,total,paid,remaining,status,sales_rep,created_by,bus_seats,bus_seat_price,transport_total,pickup,dropoff,created_at';
   const [bks,accs,logs,hbks]=await Promise.all([
@@ -4036,7 +4037,7 @@ async function initApp(){
 }
 
 // Mappers
-function mB(r){return{id:r.id,name:r.name||'',phone:r.phone||'',phone2:r.phone2||'',pickup:r.pickup||'',convoy:r.convoy,convoy2:r.convoy2||null,checkin:r.checkin||'',checkout:r.checkout||'',apts:r.apts||[],aptPrices:r.apt_prices||{},aptsTotal:r.apts_total||0,apts2:r.apts2||[],aptPrices2:r.apt_prices2||{},seats:r.seats||0,extraSeats:r.extra_seats||0,seatDiscount:r.seat_discount||0,seatPrice:r.seat_price||0,seatDiscAmt:r.seat_disc_amt||0,intSeats:r.int_seats||0,intSeatPrice:r.int_seat_price||0,intTotal:r.int_total||0,transferFee:r.transfer_fee||0,transferFeeNote:r.transfer_fee_note||'',disc:r.disc||0,total:r.total||0,paid:r.paid||0,remaining:r.remaining||0,payments:r.payments||[],notes:r.notes||'',seatNote:r.seat_note||'',seatAssign:r.seat_assign||[],seatAssign2:r.seat_assign2||[],mgrSnap:r.mgr_snap||{},createdBy:r.created_by||'',partyType:r.party_type||'client',supplierId:r.supplier_id||null,discReason:r.disc_reason||'',adults:r.adults||0,children:r.children||0,status:r.status||'active',lastEditBy:r.last_edit_by||'',lastEditAt:r.last_edit_at||'',created:(()=>{const _d=r.created_at?new Date(r.created_at):new Date();return _d.getFullYear()+'/'+String(_d.getMonth()+1).padStart(2,'0')+'/'+String(_d.getDate()).padStart(2,'0');})(),createdAt:r.created_at||'',busIdx:r.bus_idx||0,collectVia:r.collect_via||'',collectViaSeatCost:r.collect_via_seat_cost||0}}function mA(r){return{id:r.id,type:r.type||'',op:r.op||'in',amount:r.amount||0,date:r.entry_date||'',desc:r.description||'',clientName:r.client_name||'',category:r.category||'',bookingRef:r.booking_ref||'',bookingPayRef:r.booking_pay_ref||'',counterParty:r.booking_pay_ref||'',supplierId:r.supplier_id||null,createdAt:r.created_at||''}}
+function mB(r){return{id:r.id,name:r.name||'',phone:r.phone||'',phone2:r.phone2||'',pickup:r.pickup||'',convoy:r.convoy,convoy2:r.convoy2||null,checkin:r.checkin||'',checkout:r.checkout||'',apts:r.apts||[],aptPrices:r.apt_prices||{},aptsTotal:r.apts_total||0,apts2:r.apts2||[],aptPrices2:r.apt_prices2||{},seats:r.seats||0,extraSeats:r.extra_seats||0,seatDiscount:r.seat_discount||0,seatPrice:r.seat_price||0,seatDiscAmt:r.seat_disc_amt||0,intSeats:r.int_seats||0,intSeatPrice:r.int_seat_price||0,intTotal:r.int_total||0,transferFee:r.transfer_fee||0,transferFeeNote:r.transfer_fee_note||'',disc:r.disc||0,total:r.total||0,paid:r.paid||0,remaining:r.remaining||0,payments:r.payments||[],notes:r.notes||'',seatNote:r.seat_note||'',seatAssign:r.seat_assign||[],seatAssign2:r.seat_assign2||[],mgrSnap:r.mgr_snap||{},createdBy:r.created_by||'',enteredBy:r.entered_by||'',partyType:r.party_type||'client',supplierId:r.supplier_id||null,discReason:r.disc_reason||'',adults:r.adults||0,children:r.children||0,status:r.status||'active',lastEditBy:r.last_edit_by||'',lastEditAt:r.last_edit_at||'',created:(()=>{const _d=r.created_at?new Date(r.created_at):new Date();return _d.getFullYear()+'/'+String(_d.getMonth()+1).padStart(2,'0')+'/'+String(_d.getDate()).padStart(2,'0');})(),createdAt:r.created_at||'',busIdx:r.bus_idx||0,collectVia:r.collect_via||'',collectViaSeatCost:r.collect_via_seat_cost||0}}function mA(r){return{id:r.id,type:r.type||'',op:r.op||'in',amount:r.amount||0,date:r.entry_date||'',desc:r.description||'',clientName:r.client_name||'',category:r.category||'',bookingRef:r.booking_ref||'',bookingPayRef:r.booking_pay_ref||'',counterParty:r.booking_pay_ref||'',supplierId:r.supplier_id||null,createdAt:r.created_at||''}}
 function mL(r){return{id:r.id,ts:r.created_at?new Date(r.created_at).toLocaleString('ar-EG'):'',user:r.user_name||'',username:r.username||'',action:r.action||'',type:r.log_type||'',detail:r.detail||''}}
 function mS(r){
   // Load price map from settings - always prefer DB over defaults
@@ -5169,7 +5170,7 @@ async function saveBooking(){
   const busIdxVal=parseInt(document.getElementById('f-bus-sel')?.value)||0;
   // sa2 = مقاعد العودة: نفس عدد الذهاب بالظبط
   const sa2=convoy2Val?[...Array(netSeatsTotal).keys()].map(()=>({seatNum:null,extra:false})):[];
-  const payload={name,phone,phone2,pickup,convoy:cn,convoy2:convoy2Val,checkin:conv.checkin,checkout:conv.checkout,apts:selApts,apt_prices:ap,apts_total:at+at2,apts2:selApts2,apt_prices2:ap2,seats:base1+base2,extra_seats:extra,seat_discount:sd,seat_price:sp,seat_disc_amt:sda,int_seats:intS,int_seat_price:intP,int_total:intT,disc,total,paid,remaining:total-paid,payments:pays,notes:document.getElementById('f-notes').value,seat_note:(document.getElementById('f-seat-note')?.value?.trim()||'')+(isTransportOnly?' [نقل فقط]':''),seat_assign:sa,seat_assign2:sa2,mgr_snap:settings,created_at:new Date().toISOString(),created_by:(document.getElementById('f-sales-rep')?.value||currentUser?.name||'—'),party_type:pt,supplier_id:supplierId,adults:parseInt(document.getElementById('f-adults')?.value)||0,children:parseInt(document.getElementById('f-children')?.value)||0,bus_idx:busIdxVal,_discReason:document.getElementById('f-disc-reason')?.value||''};
+  const payload={name,phone,phone2,pickup,convoy:cn,convoy2:convoy2Val,checkin:conv.checkin,checkout:conv.checkout,apts:selApts,apt_prices:ap,apts_total:at+at2,apts2:selApts2,apt_prices2:ap2,seats:base1+base2,extra_seats:extra,seat_discount:sd,seat_price:sp,seat_disc_amt:sda,int_seats:intS,int_seat_price:intP,int_total:intT,disc,total,paid,remaining:total-paid,payments:pays,notes:document.getElementById('f-notes').value,seat_note:(document.getElementById('f-seat-note')?.value?.trim()||'')+(isTransportOnly?' [نقل فقط]':''),seat_assign:sa,seat_assign2:sa2,mgr_snap:settings,created_at:new Date().toISOString(),created_by:(document.getElementById('f-sales-rep')?.value||currentUser?.name||'—'),entered_by:(currentUser?.name||'—'),party_type:pt,supplier_id:supplierId,adults:parseInt(document.getElementById('f-adults')?.value)||0,children:parseInt(document.getElementById('f-children')?.value)||0,bus_idx:busIdxVal,_discReason:document.getElementById('f-disc-reason')?.value||''};
   // Store disc reason in notes if provided (temp workaround until SQL updated)
   const drVal=document.getElementById('f-disc-reason')?.value?.trim();
   if(drVal&&!payload.notes) payload.notes='خصم: '+drVal;
@@ -7525,7 +7526,8 @@ async function editBooking(id){
         </div>
       </div>
       <div class="fg" style="font-size:11px;color:var(--tx3);padding-top:6px">
-        <div>📝 أنشأ الحجز: <b>${b.createdBy||'—'}</b></div>
+        <div>👤 مسؤول المبيعات: <b>${b.createdBy||'—'}</b></div>
+        ${b.enteredBy&&b.enteredBy!==b.createdBy?`<div style="margin-top:2px">📝 أدخله: <b>${b.enteredBy}</b></div>`:''}
         <div style="margin-top:3px">📅 تاريخ الإنشاء: <b>${b.created||'—'}</b></div>
         ${b.lastEditBy?`<div style="margin-top:3px">✏️ آخر تعديل: <b>${b.lastEditBy}</b> — ${b.lastEditAt||''}</div>`:''}
       </div>
@@ -8052,7 +8054,7 @@ table{table-layout:fixed;word-wrap:break-word}</style></head><body>
   <div class="row"><span class="l">تاريخ الخروج</span><span>${checkoutDisplay} · 5-7 صباحاً${conv2Obj?' <span style="background:#f9e79f;color:#7d3c98;border-radius:3px;font-size:10px;padding:1px 5px;font-weight:700">مع فوج '+conv2Obj.label+'</span>':''}</span></div>
   ${totalGoSeats>0?`<div class="row" style="background:#e8f8f5"><span class="l" style="font-weight:700;color:#117a65">كراسي ${b.convoy2?'الذهاب ('+convTxt(b.convoy)+')':'الباص'}</span><span style="font-weight:800;color:#117a65">${totalGoSeats} كرسي${as?' · مقاعد: '+as:''}</span></div>`:''}
   ${(b.convoy2&&totalGoSeats>0)?`<div class="row" style="background:#f5eef8"><span class="l" style="font-weight:700;color:#7d3c98">كراسي العودة (${convTxt(b.convoy2)})</span><span style="font-weight:800;color:#7d3c98">${totalGoSeats} كرسي${as2?' · مقاعد: '+as2:''}</span></div>`:''}
-  <div class="row"><span class="l">المسؤول</span><span>${b.createdBy||'-'}</span></div>
+  <div class="row"><span class="l">مسؤول المبيعات</span><span style="font-weight:700">${b.createdBy||'-'}</span></div>${b.enteredBy&&b.enteredBy!==b.createdBy?`<div class="row"><span class="l" style="font-size:11px;color:var(--tx3)">📝 أدخله</span><span style="font-size:11px;color:var(--tx3)">${b.enteredBy}</span></div>`:''}${b.lastEditBy?`<div class="row"><span class="l" style="font-size:11px;color:var(--tx3)">✏️ آخر تعديل</span><span style="font-size:11px;color:var(--tx3)">${b.lastEditBy}${b.lastEditAt?' — '+b.lastEditAt:''}</span></div>`:''}
 </div>
 ${(aR||aR2)?`<div class="sec"><div class="st">الشقق المحجوزة</div><table><thead><tr><th>رقم الشقة</th><th>الوصف</th><th>السعر</th></tr></thead><tbody>${aR}${aR2}</tbody></table></div>`:''}
 <div class="sec"><div class="st">تفاصيل الحساب</div><div class="tot">
