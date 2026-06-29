@@ -5334,6 +5334,22 @@ function renderClients(resetPage=true){
   </tr>`;}).join('');
 }
 
+
+async function restoreBooking(id){
+  if(!confirm('استرجاع هذا الحجز وتفعيله مرة أخرى؟'))return;
+  const b=bookings.find(x=>x.id===id);if(!b)return;
+  try{
+    await sbFetch('mtr_bookings','PATCH',{status:'active'},`?id=eq.${id}`);
+    b.status='active';
+    addLog(`استرجاع حجز: ${b.name}`,'edit',`تم تفعيل الحجز مرة أخرى`);
+    markAllTabsDirty();
+    renderCancelled();
+    // لو صفحة التفاصيل مفتوحة، حدّثها
+    if(document.getElementById('cl-det').style.display!=='none')viewClient(id);
+    toast('✅ تم استرجاع الحجز بنجاح','ok');
+  }catch(e){alert('خطأ في الاسترجاع: '+e.message);}
+}
+
 let _cxlPage=0;
 const _CXL_PAGE_SIZE=50;
 function renderCancelled(resetPage=true){
@@ -5385,7 +5401,7 @@ function renderCancelled(resetPage=true){
     <td style="color:var(--dn)">${b.remaining.toLocaleString()} ج</td>
     <td style="font-size:11px;color:var(--tx2)">${b.created||'—'}</td>
     <td><span class="badge b-gy" style="font-size:10px">${b.createdBy||'—'}</span></td>
-    <td><button class="btn btn-sm" style="background:var(--dnl);color:var(--dn);border-color:var(--dn)" onclick="viewClient(${b.id})">عرض</button></td>
+    <td style="display:flex;gap:4px"><button class="btn btn-sm" style="background:var(--dnl);color:var(--dn);border-color:var(--dn)" onclick="viewClient(${b.id})">عرض</button>${canDo('edit_booking')?`<button class="btn btn-sm" style="background:var(--acl);color:var(--ac);border-color:var(--ac)" onclick="restoreBooking(${b.id})">↩ استرجاع</button>`:''}</td>
     </tr>`;
   }).join('');
 }
@@ -5444,7 +5460,9 @@ async function ensureBusSeatsLoaded(cn){
 }
 async function viewClient(id){
   const b=bookings.find(x=>x.id===id);if(!b)return;
-  showTab('clients');
+  // لو جاي من تاب الإلغاءات وهو ملغي، افتحه في clients بس اوعى تمسح الـ cancelled view
+  if(_activeTab!=='cancelled')showTab('clients');
+  else showTab('clients');
   document.getElementById('cl-list').style.display='none';
   document.getElementById('cl-det').style.display='block';
   // ===== جيب الأعمدة الثقيلة on-demand لو مش موجودة =====
@@ -5473,6 +5491,7 @@ async function viewClient(id){
   const as=(b.seatAssign||[]).filter(s=>s.seatNum).map(s=>s.seatNum).join('، ');
   const as2=(b.seatAssign2||[]).filter(s=>s.seatNum).map(s=>s.seatNum).join('، ');
   document.getElementById('cl-content').innerHTML=`<div class="card">
+    ${b.status==='cancelled'?`<div style="background:var(--dnl);border:1.5px solid var(--dn);border-radius:10px;padding:10px 14px;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><div style="font-weight:700;color:var(--dn);font-size:13px">❌ هذا الحجز ملغي</div>${canDo('edit_booking')?`<button class="btn btn-sm" style="background:var(--acl);color:var(--ac);border-color:var(--ac)" onclick="restoreBooking(${b.id})">↩ استرجاع الحجز</button>`:''}</div>`:''}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:.875rem;flex-wrap:wrap">
       <div style="width:42px;height:42px;border-radius:50%;background:var(--pr);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff">${b.name.charAt(0)}</div>
       <div style="flex:1">
@@ -5488,6 +5507,11 @@ async function viewClient(id){
         <div style="font-size:11px;color:var(--tx3)">المسؤول: ${b.createdBy||'—'}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        ${b.status==='cancelled'?`
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:var(--prl);color:var(--pr);border-color:var(--pr)" onclick="genClientLink(${b.id})" title="نسخ رابط كشف حساب العميل">🔗 رابط العميل</button>
+          ${canDo('delete_booking')?`<button class="btn btn-d btn-sm" onclick="delBooking(${b.id})">🗑 حذف</button>`:''}
+        </div>`:`
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-p btn-sm" onclick="printReceipt(${b.id})">🧾 إيصال</button>
           <button class="btn btn-sm" style="background:var(--prl);color:var(--pr);border-color:var(--pr)" onclick="genClientLink(${b.id})" title="نسخ رابط كشف حساب العميل">🔗 رابط العميل</button>
@@ -5499,7 +5523,7 @@ async function viewClient(id){
           <button class="btn btn-sm" onclick="showCollectViaModal(${b.id})" style="background:var(--acl);color:var(--ac);border-color:var(--ac)" title="تغيير جهة التحصيل">${(()=>{const v=b.collectVia;if(!v)return(effSeats(b)>0?"🚌 باص":"🏢 برج");if(v==="bus")return"🚌 باص";if(v==="building")return"🏢 برج";if(v.startsWith("supplier_")){const s=suppliers.find(x=>x.id===parseInt(v.replace("supplier_","")));return"🤝 "+(s?.name||"مورد");}return"🔄 تحصيل";})()}} ← تغيير</button>
           <button class="btn btn-sm" onclick="addTaskForClient(${b.id})" style="background:var(--pul);color:var(--pu);border-color:var(--pu)">📋 تاسك</button>
           ${canDo('delete_booking')?`<button class="btn btn-d btn-sm" onclick="delBooking(${b.id})">🗑 حذف</button>`:''}
-        </div>
+        </div>`}
       </div>
     </div>
     <div class="g3" style="margin-bottom:.75rem">
