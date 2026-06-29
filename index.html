@@ -5344,8 +5344,11 @@ async function restoreBooking(id){
     addLog(`استرجاع حجز: ${b.name}`,'edit',`تم تفعيل الحجز مرة أخرى`);
     markAllTabsDirty();
     renderCancelled();
-    // لو صفحة التفاصيل مفتوحة، حدّثها
-    if(document.getElementById('cl-det').style.display!=='none')viewClient(id);
+    // لو صفحة التفاصيل مفتوحة، ارجع للقايمة
+    if(document.getElementById('cl-det').style.display!=='none'){
+      document.getElementById('cl-det').style.display='none';
+      document.getElementById('cl-list').style.display='block';
+    }
     toast('✅ تم استرجاع الحجز بنجاح','ok');
   }catch(e){alert('خطأ في الاسترجاع: '+e.message);}
 }
@@ -5458,11 +5461,11 @@ async function ensureBusSeatsLoaded(cn){
     _busSeatsLoadedConvoys.add(cn);
   }catch(ex){console.warn('ensureBusSeatsLoaded failed',cn,ex.message);}
 }
+let _prevTab='clients';
 async function viewClient(id){
   const b=bookings.find(x=>x.id===id);if(!b)return;
-  // لو جاي من تاب الإلغاءات وهو ملغي، افتحه في clients بس اوعى تمسح الـ cancelled view
-  if(_activeTab!=='cancelled')showTab('clients');
-  else showTab('clients');
+  _prevTab=_activeTab||'clients';
+  if(_activeTab!=='clients')showTab('clients');
   document.getElementById('cl-list').style.display='none';
   document.getElementById('cl-det').style.display='block';
   // ===== جيب الأعمدة الثقيلة on-demand لو مش موجودة =====
@@ -5767,7 +5770,12 @@ async function saveCollectVia(id){
     viewClient(id);
   }catch(e){alert('فشل الحفظ: '+e.message)}
 }
-function showClList(){document.getElementById('cl-list').style.display='block';document.getElementById('cl-det').style.display='none';renderClients()}
+function showClList(){
+  document.getElementById('cl-list').style.display='block';
+  document.getElementById('cl-det').style.display='none';
+  if(_prevTab==='cancelled'){showTab('cancelled');}
+  else{showTab('clients');renderClients();}
+}
 
 // ============================================================
 // BUS
@@ -7703,7 +7711,7 @@ async function editBooking(id){
     <div class="g2" style="margin-top:.75rem">
       <div class="fg"><label>حالة الحجز</label>
         <select id="edit-status" style="font-weight:700">
-          <option value="active" ${(b.status||'active')==='active'?'selected':''}>✅ Confirmed</option>
+          <option value="active" ${(b.status||'active')==='active'?'selected':''}>✅ Active</option>
           <option value="cancelled" ${b.status==='cancelled'?'selected':''}>❌ Cancelled</option>
         </select>
         <div id="cancel-warn" style="display:${b.status==='cancelled'?'block':'none'};margin-top:5px;padding:7px;background:var(--dnl);border:1px solid var(--dn);border-radius:7px;font-size:11px;color:var(--dn)">
@@ -8245,9 +8253,9 @@ table{table-layout:fixed;word-wrap:break-word}</style></head><body>
   ${((b.adults||0)>0||(b.children||0)>0)?('<div class="row"><span class="l">عدد الأفراد</span><span style="font-weight:700">'+(b.adults||0)+' كبار'+((b.children||0)>0?' · '+(b.children||0)+' أطفال':'')+'</span></div>'):''}
   <div class="row"><span class="l">تاريخ الدخول</span><span>${b.checkin||'-'} · 9-11 صباحاً</span></div>
   <div class="row"><span class="l">تاريخ الخروج</span><span>${checkoutDisplay} · 5-7 صباحاً${conv2Obj?' <span style="background:#f9e79f;color:#7d3c98;border-radius:3px;font-size:10px;padding:1px 5px;font-weight:700">مع فوج '+conv2Obj.label+'</span>':''}</span></div>
-  ${totalGoSeats>0?`<div class="row" style="background:#e8f8f5"><span class="l" style="font-weight:700;color:#117a65">كراسي ${b.convoy2?'الذهاب ('+convTxt(b.convoy)+')':'الباص'}</span><span style="font-weight:800;color:#117a65">${totalGoSeats} كرسي${as?' · مقاعد: '+as:''}</span></div>`:''}
-  ${(b.convoy2&&totalGoSeats>0)?`<div class="row" style="background:#f5eef8"><span class="l" style="font-weight:700;color:#7d3c98">كراسي العودة (${convTxt(b.convoy2)})</span><span style="font-weight:800;color:#7d3c98">${totalGoSeats} كرسي${as2?' · مقاعد: '+as2:''}</span></div>`:''}
-  <div class="row"><span class="l">مسؤول المبيعات</span><span style="font-weight:700">${b.createdBy||'-'}</span></div>${b.enteredBy&&b.enteredBy!==b.createdBy?`<div class="row"><span class="l" style="font-size:11px;color:var(--tx3)">📝 أدخله</span><span style="font-size:11px;color:var(--tx3)">${b.enteredBy}</span></div>`:''}
+  ${totalGoSeats>0?`<div class="row" style="background:#e8f8f5"><span class="l" style="font-weight:700;color:#117a65">كراسي ${b.convoy2?'الذهاب ('+convTxt(b.convoy)+')':'الباص'}</span><span style="font-weight:800;color:#117a65">${totalGoSeats} كرسي</span></div>`:''}
+  ${(b.convoy2&&totalGoSeats>0)?`<div class="row" style="background:#f5eef8"><span class="l" style="font-weight:700;color:#7d3c98">كراسي العودة (${convTxt(b.convoy2)})</span><span style="font-weight:800;color:#7d3c98">${totalGoSeats} كرسي</span></div>`:''}
+  <div class="row"><span class="l">مسؤول المبيعات</span><span style="font-weight:700">${b.createdBy||'-'}</span></div>
 </div>
 ${(aR||aR2)?`<div class="sec"><div class="st">الشقق المحجوزة</div><table><thead><tr><th>رقم الشقة</th><th>الوصف</th><th>السعر</th></tr></thead><tbody>${aR}${aR2}</tbody></table></div>`:''}
 <div class="sec"><div class="st">تفاصيل الحساب</div><div class="tot">
