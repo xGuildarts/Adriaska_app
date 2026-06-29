@@ -590,6 +590,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   <button class="tab active" id="tab-dash" onclick="showTab('dash')">الرئيسية</button>
   <button class="tab" id="tab-add" onclick="showTab('add')">حجز جديد</button>
   <button class="tab" id="tab-clients" onclick="showTab('clients')">العملاء</button>
+  <button class="tab h" id="tab-cancelled" onclick="showTab('cancelled')">❌ الإلغاءات</button>
   <button class="tab" id="tab-bus" onclick="showTab('bus')">الباص</button>
   <button class="tab" id="tab-accs" onclick="showTab('accs')">الحسابات</button>
   <button class="tab" id="tab-tasks" onclick="showTab('tasks')">📋 التاسكات</button>
@@ -809,6 +810,18 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   <div id="cl-det" style="display:none">
     <button class="btn" style="margin-bottom:.65rem" onclick="showClList()">← Back</button>
     <div id="cl-content"></div>
+  </div>
+</div>
+<!-- CANCELLED -->
+<div id="cancelled" class="sec">
+  <div class="card">
+    <div class="ctitle" style="color:var(--dn)">❌ الحجوزات الملغاة</div>
+    <div style="display:flex;gap:7px;margin-bottom:.75rem;flex-wrap:wrap">
+      <input type="text" id="cxl-q" placeholder="ابحث بالاسم أو هاتف أو شقة أو الفوج..." oninput="debounce(()=>renderCancelled(),'cxl-q',280)" style="flex:1;min-width:180px">
+      <select id="cxl-convoy-f" onchange="renderCancelled()" style="max-width:150px"><option value="">كل الأفواج</option></select>
+    </div>
+    <div class="tbl-wrap" style="min-width:0"><table style="min-width:900px"><thead><tr><th>العميل</th><th>الهاتف</th><th>الشقق</th><th>الفوج</th><th>الكراسي</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الحجز</th><th>المسؤول</th><th></th></tr></thead><tbody id="cxl-tbl"></tbody></table></div>
+    <div id="cxl-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:.65rem;font-family:Cairo,sans-serif;font-size:13px;flex-wrap:wrap"></div>
   </div>
 </div>
 <!-- BUS -->
@@ -1682,8 +1695,8 @@ async function toggleBkLimit10(uid,checked){
     renderUsers();
   }catch(e){alert('فشل: '+e.message);}
 }
-const ALL_PERMS={'add_booking':'إضافة حجز','edit_booking':'تعديل حجز','delete_booking':'حذف حجز','add_client':'إضافة عميل','add_supplier':'إضافة مورد','view_accounts':'عرض الحسابات','edit_accounts':'تعديل قيود','delete_accounts':'حذف قيود','approve_payments':'اعتماد دفعات','transfer_accounts':'تحويل بين الحسابات','view_log':'سجل النشاط','manage_users':'إدارة المستخدمين','view_bus':'عرض الباص','edit_bus':'تعديل مقاعد الباص','print_bus':'طباعة قائمة الباص','settings':'الإعدادات العامة','manage_prices':'إدارة الأسعار','view_design':'إدارة التصميم','view_reports':'التقارير','print_receipt':'طباعة إيصالات','manage_categories':'إدارة فئات الحسابات','manage_locks':'تقفيل الأفواج','bypass_lock':'تجاوز قفل الفوج','view_conv_accounts':'حسابات الأفواج','view_closing':'تقفيلة الفوج','view_remainings':'كشف المتبقيات','view_reps':'تقرير المندوبين','view_receipt_voucher':'إذن استلام نقدية','view_bulk_voucher':'إذن جماعي','manage_system':'إدارة النظام (نسخ احتياطي + اتصال)'};
-const ROLE_DEFAULTS={admin:Object.keys(ALL_PERMS),bookings:['add_booking','edit_booking','add_client','view_bus','edit_bus','print_receipt','view_closing','view_receipt_voucher','view_bulk_voucher'],accounts:['view_accounts','edit_accounts','delete_accounts','approve_payments','transfer_accounts','view_reports','view_remainings','view_conv_accounts','view_receipt_voucher','view_bulk_voucher','view_closing'],operations:['view_bus','edit_bus','print_bus','view_reports','view_closing'],viewer:['view_bus','view_reports']};
+const ALL_PERMS={'add_booking':'إضافة حجز','edit_booking':'تعديل حجز','delete_booking':'حذف حجز','add_client':'إضافة عميل','add_supplier':'إضافة مورد','view_accounts':'عرض الحسابات','edit_accounts':'تعديل قيود','delete_accounts':'حذف قيود','approve_payments':'اعتماد دفعات','transfer_accounts':'تحويل بين الحسابات','view_log':'سجل النشاط','manage_users':'إدارة المستخدمين','view_bus':'عرض الباص','edit_bus':'تعديل مقاعد الباص','print_bus':'طباعة قائمة الباص','settings':'الإعدادات العامة','manage_prices':'إدارة الأسعار','view_design':'إدارة التصميم','view_reports':'التقارير','print_receipt':'طباعة إيصالات','manage_categories':'إدارة فئات الحسابات','manage_locks':'تقفيل الأفواج','bypass_lock':'تجاوز قفل الفوج','view_conv_accounts':'حسابات الأفواج','view_closing':'تقفيلة الفوج','view_remainings':'كشف المتبقيات','view_reps':'تقرير المندوبين','view_receipt_voucher':'إذن استلام نقدية','view_bulk_voucher':'إذن جماعي','manage_system':'إدارة النظام (نسخ احتياطي + اتصال)','view_cancelled':'عرض الإلغاءات'};
+const ROLE_DEFAULTS={admin:Object.keys(ALL_PERMS),bookings:['add_booking','edit_booking','add_client','view_bus','edit_bus','print_receipt','view_closing','view_receipt_voucher','view_bulk_voucher','view_cancelled'],accounts:['view_accounts','edit_accounts','delete_accounts','approve_payments','transfer_accounts','view_reports','view_remainings','view_conv_accounts','view_receipt_voucher','view_bulk_voucher','view_closing'],operations:['view_bus','edit_bus','print_bus','view_reports','view_closing'],viewer:['view_bus','view_reports']};
 
 // ============================================================
 // POPUP SYSTEM — replaces browser alert/confirm
@@ -3056,7 +3069,8 @@ async function _doPoll(){
         if(idx<0){
           // حجز جديد — جيب بياناته الكاملة الخفيفة
           sbFetch('mtr_bookings','GET',null,`?id=eq.${r.id}&select=id,name,phone,phone2,convoy,convoy2,checkin,checkout,apts,apts2,apts_total,apt_prices,apt_prices2,seats,extra_seats,seat_discount,seat_price,seat_disc_amt,int_seats,int_seat_price,int_total,transfer_fee,disc,total,paid,remaining,status,pickup,created_by,entered_by,party_type,supplier_id,adults,children,bus_idx,collect_via,collect_via_seat_cost,created_at,last_edit_by,last_edit_at`)
-            .then(rows=>{if(rows&&rows[0]){const _nb=mB(rows[0]);bookings.unshift(_nb);_busSeatsLoadedConvoys.delete(_nb.convoy);if(_nb.convoy2)_busSeatsLoadedConvoys.delete(_nb.convoy2);markAllTabsDirty();if(_activeTab==='dash')renderDash();else if(_activeTab==='clients')renderClients();}})
+            .then(rows=>{if(rows&&rows[0]){const _nb=mB(rows[0]);bookings.unshift(_nb);_busSeatsLoadedConvoys.delete(_nb.convoy);if(_nb.convoy2)_busSeatsLoadedConvoys.delete(_nb.convoy2);markAllTabsDirty();if(_activeTab==='dash')renderDash();else if(_activeTab==='clients')renderClients();
+            else if(_activeTab==='cancelled')renderCancelled();}})
             .catch(()=>{});
           changed=true;
         }else{
@@ -3079,6 +3093,7 @@ async function _doPoll(){
         markAllTabsDirty();
         if(_activeTab==='dash')renderDash();
         else if(_activeTab==='clients')renderClients();
+            else if(_activeTab==='cancelled')renderCancelled();
         else if(_activeTab==='bus')renderBusTab();
       }
     }
@@ -4160,6 +4175,7 @@ function applyPerms(){
   if(perms.includes('view_remainings')) showTabs.push('remainings');
   if(perms.includes('view_reps')) showTabs.push('reps');
   if(perms.includes('view_bulk_voucher')) showTabs.push('bulk-voucher');
+  if(perms.includes('view_cancelled')) showTabs.push('cancelled');
   showTabs.push('hotels');
 
   document.querySelectorAll('.tab[id^="tab-"]').forEach(t=>{
@@ -4743,10 +4759,10 @@ function populateSupSel(){
 // SHOW TAB
 // ============================================================
 // ===== Lazy Tab Render — track dirty tabs =====
-const _dirtyTabs=new Set(['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts']);
+const _dirtyTabs=new Set(['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts','cancelled']);
 let _activeTab='dash';
 function markTabsDirty(...tabs){tabs.forEach(t=>_dirtyTabs.add(t));}
-function markAllTabsDirty(){['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts','sched','tasks','system'].forEach(t=>_dirtyTabs.add(t));}
+function markAllTabsDirty(){['dash','clients','bus','accs','reports','log','hotels','remainings','reps','conv-accounts','sched','tasks','system','cancelled'].forEach(t=>_dirtyTabs.add(t));}
 
 // ===== Tab-group dropdowns: تفتح كمودال في نص الشاشة دايمًا، بعيد عن موضع الزرار =====
 const _tgOriginalParents=new WeakMap();
@@ -4809,6 +4825,7 @@ function showTab(t){
   if(t==='reps')renderReps();
   if(t==='add'){populateConvoys();populateCities();populateSupSel();renderGrid();}
   if(t==='hotels'){renderHotelStats();renderHotelBookings();}
+  if(t==='cancelled')renderCancelled();
   if(t==='bulk-voucher'){bvInit();}
   if(t==='mgr'){loadMgr();renderCatsMgr();}
   if(t==='locks'){renderLockManager();renderBypassUsers();}
@@ -4839,7 +4856,7 @@ function _renderDashImmediate(){
   const discs=ab.reduce((s,b)=>s+(b.seatDiscAmt||0)+(b.disc||0),0);
   const cancelledCount=bookings.filter(b=>b.status==='cancelled').length;
   document.getElementById('dash-stats').innerHTML=`
-    <div class="stat"><div class="stat-label">الحجوزات النشطة</div><div class="stat-val">${ab.length}${cancelledCount?`<span style="font-size:11px;color:var(--dn);margin-right:5px">(${cancelledCount} ملغي)</span>`:''}</div></div>
+    <div class="stat" style="cursor:${cancelledCount?'pointer':'default'}" onclick="if(cancelledCount)showTab('cancelled')"><div class="stat-label">الحجوزات النشطة</div><div class="stat-val">${ab.length}${cancelledCount?`<span style="font-size:11px;color:var(--dn);margin-right:5px;text-decoration:underline">(${cancelledCount} ملغي)</span>`:''}</div></div>
     <div class="stat gold"><div class="stat-label">الإيرادات</div><div class="stat-val">${tot.toLocaleString()} ج</div></div>
     <div class="stat green"><div class="stat-label">المحصل</div><div class="stat-val">${paid.toLocaleString()} ج</div></div>
     <div class="stat teal"><div class="stat-label">إيراد النقل</div><div class="stat-val">${trans.toLocaleString()} ج</div></div>
@@ -5277,7 +5294,7 @@ function renderClients(resetPage=true){
     const mq=!q||b.name.toLowerCase().includes(q)||(b.apts||[]).some(a=>a.toLowerCase().includes(q))||(b.phone||'').includes(q)||(b.pickup||'').toLowerCase().includes(q)||(b.checkin||'').includes(q)||(b.createdBy||'').toLowerCase().includes(q)||String(b.convoy).includes(q)||convLabel.includes(q)||(b.notes||'').toLowerCase().includes(q);
     const ms=!sf||(sf==='done'&&b.remaining<=0)||(sf==='pending'&&b.remaining>0);
     const mp=!pf||(b.partyType||'client')===pf;
-    return mq&&ms&&mp;
+    return b.status!=='cancelled'&&mq&&ms&&mp;
   }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
   let fLim=f;
   if(currentUser&&currentUser.role!=='admin'&&userHasBkLimit10(currentUser)){
@@ -5316,6 +5333,68 @@ function renderClients(resetPage=true){
     <td><button class="btn btn-p btn-sm" onclick="printReceipt(${b.id})">إيصال</button><button class="btn btn-s btn-sm" onclick="printVoucher(${b.id},'receipt')">📥 استلام</button><button class="btn btn-d btn-sm" onclick="printVoucher(${b.id},'payment')">💸 صرف</button><button class="btn btn-sm" style="background:var(--prl);color:var(--pr);border-color:var(--pr)" onclick="event.stopPropagation();genClientLink(${b.id})" title="رابط كشف حساب العميل">🔗</button></td>
   </tr>`;}).join('');
 }
+
+let _cxlPage=0;
+const _CXL_PAGE_SIZE=50;
+function renderCancelled(resetPage=true){
+  if(resetPage)_cxlPage=0;
+  const q=(document.getElementById('cxl-q')?.value||'').toLowerCase();
+  const cf=document.getElementById('cxl-convoy-f')?.value||'';
+  const cSel=document.getElementById('cxl-convoy-f');
+  if(cSel&&cSel.options.length<=1){
+    const convNums=[...new Set(bookings.filter(b=>b.status==='cancelled').map(b=>b.convoy))].sort((a,b)=>a-b);
+    convNums.forEach(cn=>{
+      const conv=CONVOYS.find(c=>c.num===cn);
+      const opt=document.createElement('option');
+      opt.value=String(cn);
+      opt.textContent=conv?conv.label:('فوج '+cn);
+      cSel.appendChild(opt);
+    });
+  }
+  const f=bookings.filter(b=>{
+    if(b.status!=='cancelled')return false;
+    if(cf&&String(b.convoy)!==cf)return false;
+    if(q){
+      const conv=CONVOYS.find(c=>c.num===b.convoy);
+      const convLabel=(conv?.label||'').toLowerCase();
+      if(!b.name.toLowerCase().includes(q)&&!(b.phone||'').includes(q)&&!(b.apts||[]).some(a=>a.toLowerCase().includes(q))&&!convLabel.includes(q)&&!(b.createdBy||'').toLowerCase().includes(q))return false;
+    }
+    return true;
+  }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  const tb=document.getElementById('cxl-tbl');
+  const pager=document.getElementById('cxl-pager');
+  const totalPages=Math.ceil(f.length/_CXL_PAGE_SIZE)||1;
+  const start=_cxlPage*_CXL_PAGE_SIZE,end=start+_CXL_PAGE_SIZE;
+  const pageItems=f.slice(start,end);
+  if(pager)pager.innerHTML=f.length>_CXL_PAGE_SIZE?
+    `<button onclick="cxlPageGo(-1)" ${_cxlPage===0?'disabled':''} style="padding:4px 12px;border:1px solid var(--bd2);border-radius:7px;cursor:pointer;font-family:Cairo,sans-serif;background:var(--sf)">‹ السابق</button>
+    <span style="color:var(--tx2)">صفحة ${_cxlPage+1} من ${totalPages} · إجمالي ${f.length} ملغي</span>
+    <button onclick="cxlPageGo(1,${totalPages})" ${_cxlPage>=totalPages-1?'disabled':''} style="padding:4px 12px;border:1px solid var(--bd2);border-radius:7px;cursor:pointer;font-family:Cairo,sans-serif;background:var(--sf)">التالي ›</button>`
+    :`<span style="color:var(--tx3);font-size:12px">${f.length} حجز ملغي</span>`;
+  if(!pageItems.length){tb.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--tx3);padding:2rem">لا توجد حجوزات ملغاة</td></tr>';return;}
+  tb.innerHTML=pageItems.map(b=>{
+    const conv=CONVOYS.find(c=>c.num===b.convoy);
+    return `<tr style="opacity:.8">
+    <td class="lnk" onclick="viewClient(${b.id})" style="color:var(--dn)">${b.name}${b.partyType==='supplier'?'<span class="badge b-pu" style="margin-right:3px;font-size:9px">مورد</span>':''}</td>
+    <td style="font-size:11px">${b.phone||'-'}</td>
+    <td>${(b.apts||[]).map(a=>`<span class="badge b-gy" style="margin:1px">${a}</span>`).join('')}</td>
+    <td><span class="badge b-gy" style="font-size:10px">${conv?conv.label:('فوج '+b.convoy)}</span></td>
+    <td style="text-align:center"><span class="badge b-gy">${effSeats(b)}</span></td>
+    <td style="font-weight:700;color:var(--tx2)">${b.total.toLocaleString()} ج</td>
+    <td style="color:var(--ac)">${b.paid.toLocaleString()} ج</td>
+    <td style="color:var(--dn)">${b.remaining.toLocaleString()} ج</td>
+    <td style="font-size:11px;color:var(--tx2)">${b.created||'—'}</td>
+    <td><span class="badge b-gy" style="font-size:10px">${b.createdBy||'—'}</span></td>
+    <td><button class="btn btn-sm" style="background:var(--dnl);color:var(--dn);border-color:var(--dn)" onclick="viewClient(${b.id})">عرض</button></td>
+    </tr>`;
+  }).join('');
+}
+function cxlPageGo(dir,total){
+  if(dir<0)_cxlPage=Math.max(0,_cxlPage-1);
+  else _cxlPage=Math.min((total||1)-1,_cxlPage+1);
+  renderCancelled(false);
+}
+
 function clPageGo(dir,total){
   if(dir<0)_clPage=Math.max(0,_clPage-1);
   else _clPage=Math.min((total||1)-1,_clPage+1);
@@ -6991,7 +7070,7 @@ function genReport(){
   if(rptCard){rptCard.style.display='block';rptCard.classList.remove('collapsed');setTimeout(initCollapsibleCards,50);}
   function inR(d){return!d||(!from||d>=from)&&(!to||d<=to)}
   let html='',title='',total=0,count=0;
-  const allBks=bookings,allAcc=accEntries;
+  const allBks=bookings.filter(b=>b.status!=='cancelled'),allAcc=accEntries;
   function bkTable(bks){
     if(!bks.length)return '<div style="text-align:center;color:var(--tx3);padding:2rem">لا توجد بيانات</div>';
     return `<table><thead><tr><th>العميل</th><th>الهاتف</th><th>الشقق</th><th>الفوج</th><th>مكان الركوب</th><th>المسؤول</th><th>كراسي الباص</th><th>داخلي</th><th>أفراد</th><th>أطفال</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody>
@@ -7600,8 +7679,8 @@ async function editBooking(id){
     <div class="g2" style="margin-top:.75rem">
       <div class="fg"><label>حالة الحجز</label>
         <select id="edit-status" style="font-weight:700">
-          <option value="active" ${(b.status||'active')==='active'?'selected':''}>✅ مؤكد / نشط</option>
-          <option value="cancelled" ${b.status==='cancelled'?'selected':''}>❌ ملغي</option>
+          <option value="active" ${(b.status||'active')==='active'?'selected':''}>✅ Confirmed</option>
+          <option value="cancelled" ${b.status==='cancelled'?'selected':''}>❌ Cancelled</option>
         </select>
         <div id="cancel-warn" style="display:${b.status==='cancelled'?'block':'none'};margin-top:5px;padding:7px;background:var(--dnl);border:1px solid var(--dn);border-radius:7px;font-size:11px;color:var(--dn)">
           ⚠️ الحجز الملغي يُشال من الحسابات والباص والجداول كأنه محذوف
@@ -8227,14 +8306,17 @@ document.addEventListener('DOMContentLoaded', function(){
 
 function populateClosingConvoys(){
   const sel=document.getElementById('cl-convoy-sel');
-  if(!sel||sel.options.length>1)return;
+  if(!sel)return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">-- اختار الفوج --</option>';
   CONVOYS.forEach(c=>{
-    const used=bookings.filter(b=>b.convoy===c.num).length;
+    const used=bookings.filter(b=>b.convoy===c.num&&b.status!=='cancelled').length;
     const o=document.createElement('option');
     o.value=c.num;
     o.textContent=c.label+(used?` (${used} حجز)`:'');
     sel.appendChild(o);
   });
+  if(prev)sel.value=prev;
 }
 
 
@@ -8295,7 +8377,7 @@ function _getClosingTableData(sectionKey){
   const sel=document.getElementById('cl-convoy-sel');
   const cn=sel?parseInt(sel.value):0;
   const conv=cn?getConv(cn):null;
-  const bks=bookings.filter(b=>b.convoy===cn&&b.partyType!=='supplier');
+  const bks=bookings.filter(b=>b.convoy===cn&&b.partyType!=='supplier'&&b.status!=='cancelled');
   const SP=600,IP=200;
   const rows=bks.map((b,i)=>{
     const baseSeats=(b.apts||[]).reduce((s,a)=>{const inf=APTS[a];return s+(inf?(inf.type==='single'?2:4):0);},0);
@@ -8711,7 +8793,7 @@ function populateClosingSel(){
   const prev=sel.value; // save current selection
   sel.innerHTML='<option value="">-- اختار الفوج --</option>';
   CONVOYS.forEach(c=>{
-    const cnt=bookings.filter(b=>b.convoy===c.num).length;
+    const cnt=bookings.filter(b=>b.convoy===c.num&&b.status!=='cancelled').length;
     const o=document.createElement('option');
     o.value=c.num;
     o.textContent=c.label+(cnt?` · ${cnt} حجز`:'');
@@ -8810,7 +8892,7 @@ async function renderClosing(){
   if(!cn||!out){out&&(out.innerHTML='<div class="info-box">اختار الفوج من الأعلى</div>');return;}
   await _loadClosingExp(cn);
   const conv=getConv(cn);
-  const bks=bookings.filter(b=>b.convoy===cn&&b.partyType!=='supplier');
+  const bks=bookings.filter(b=>b.convoy===cn&&b.partyType!=='supplier'&&b.status!=='cancelled');
   const SP=600,IP=200;
   const rows=bks.map((b,i)=>{
     const baseSeats=(b.apts||[]).reduce((s,a)=>{const inf=APTS[a];return s+(inf?(inf.type==='single'?2:4):0);},0);
