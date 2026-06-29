@@ -846,6 +846,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
     <input type="date" id="acc-filter-to" onchange="switchAccNav()" style="font-size:12px;padding:5px 8px;border:1.5px solid var(--bd2);border-radius:8px;background:var(--sf);color:var(--tx);font-family:'Cairo',sans-serif">
     <button class="btn btn-sm" onclick="document.getElementById('acc-filter-from').value='';document.getElementById('acc-filter-to').value='';switchAccNav()">كل الفترات</button>
     <button class="btn btn-sm" onclick="refreshAcc()">تحديث</button>
+    <button class="btn btn-sm" onclick="printDailyReport()" style="background:var(--acl);color:var(--ac);border-color:var(--ac)">📄 تقرير اليوم</button>
   </div>
   <div id="acc-detail"></div>
   <!-- Double Entry Form -->
@@ -3047,7 +3048,7 @@ async function _doPoll(){
   try{
     if(d)d.className='sdot s';if(t)t.textContent='جاري التحديث...';
     // جيب آخر 50 حجز — أعمدة المقارنة فقط
-    const latest=await sbFetch('mtr_bookings','GET',null,'?order=created_at.desc&limit=50&select=id,remaining,status,paid,total,convoy,name,created_at');
+    const latest=await sbFetch('mtr_bookings','GET',null,'?order=created_at.desc&limit=50&select=id,remaining,status,paid,total,convoy,name,created_at,last_edit_by');
     if(latest&&Array.isArray(latest)){
       let changed=false;
       latest.forEach(r=>{
@@ -3060,6 +3061,11 @@ async function _doPoll(){
           changed=true;
         }else{
           if(bookings[idx].remaining!==r.remaining||bookings[idx].status!==r.status||bookings[idx].paid!==r.paid){
+            // تنبيه لو التعديل من موظف آخر
+            const editedBy=r.last_edit_by||'';
+            if(editedBy&&editedBy!==(currentUser?.name||'')&&bookings[idx].total>0){
+              toast(`✏️ تم تعديل حجز: ${r.name||bookings[idx].name} بواسطة ${editedBy}`,'warn');
+            }
             bookings[idx].remaining=r.remaining;
             bookings[idx].status=r.status;
             bookings[idx].paid=r.paid;
@@ -4184,6 +4190,14 @@ function applyPerms(){
 // REMAININGS - كشف المتبقيات
 // ============================================================
 function renderRem(){
+  // لو الموظف مش admin/accounts، افلتر تلقائي على أول فوج نشط عنده
+  if(currentUser&&currentUser.role!=='admin'&&currentUser.role!=='accounts'){
+    const remSel=document.getElementById('rem-convoy');
+    if(remSel&&!remSel.value){
+      const myBks=activeBookings().filter(b=>b.createdBy===currentUser.name||b.enteredBy===currentUser.name);
+      if(myBks.length){const firstConv=myBks[0].convoy;if(remSel)remSel.value=String(firstConv);}
+    }
+  }
   const convoys=[...new Set(activeBookings().map(b=>b.convoy))].sort((a,b)=>a-b);
   const sel=document.getElementById('rem-convoy');
   if(sel){
@@ -4786,7 +4800,7 @@ function showTab(t){
   if(t==='clients')renderClients();
   if(t==='users'){renderUsers();renderRoles();}
   if(t==='bus')renderBusTab();
-  if(t==='accs'){renderAccs();fillAccSel('deb-sec','deb-type');fillAccSel('cred-sec','cred-type');}
+  if(t==='accs'){_loadPaymentsThenRenderAccs();fillAccSel('deb-sec','deb-type');fillAccSel('cred-sec','cred-type');}
   if(t==='sched')renderSched();
   if(t==='tasks')renderTasks();
   if(t==='reports')onRptTypeChange();
@@ -5126,6 +5140,26 @@ async function saveBooking(){
     mtrPopup('تنبيه','⚠️ اختار شقة على الأقل\nأو فعّل خيار "نقل فقط بدون شقة"','warn');
     return;
   }
+  // ── تحقق من التكرار ─────────────────────────────────────────
+  if(pt!=='supplier'){
+    const dupName=name?bookings.filter(b=>b.status!=='cancelled'&&b.name&&b.name.trim()===name):[];
+    const dupPhone=phone?bookings.filter(b=>b.status!=='cancelled'&&b.phone&&b.phone===phone):[];
+    const dupBoth=dupName.filter(b=>dupPhone.find(d=>d.id===b.id));
+    if(dupBoth.length){
+      const ex=dupBoth[0];
+      const go=await confirm(`⚠️ تحذير تكرار!\n\nالاسم والرقم موجودان بالفعل:\n${ex.name} · ${ex.phone}\nالفوج: ${convTxt(ex.convoy)} · تاريخ: ${ex.checkin||'—'}\n\nتكمل وتضيف حجز جديد؟`);
+      if(!go)return;
+    }else if(dupName.length){
+      const ex=dupName[0];
+      const go=await confirm(`⚠️ اسم مكرر!\n\n"${name}" موجود من قبل:\nالفوج: ${convTxt(ex.convoy)} · هاتف: ${ex.phone||'—'}\n\nتكمل وتضيف حجز جديد؟`);
+      if(!go)return;
+    }else if(dupPhone.length){
+      const ex=dupPhone[0];
+      const go=await confirm(`⚠️ رقم تليفون مكرر!\n\n${phone} موجود باسم: ${ex.name}\nالفوج: ${convTxt(ex.convoy)}\n\nتكمل وتضيف حجز جديد؟`);
+      if(!go)return;
+    }
+  }
+  // ────────────────────────────────────────────────────────────
   pickup=document.getElementById('f-pickup').value;
   const cn=parseInt(cnv);
   const convoy2Val=parseInt(document.getElementById('f-convoy2')?.value)||null;
@@ -6360,6 +6394,21 @@ function switchAccNav(){
   const val=document.getElementById('acc-nav-sub').value;
   if(val)renderAccDetail(val);
 }
+let _paymentsHydrated=false;
+async function _loadPaymentsThenRenderAccs(){
+  // لو البيانات اتحملت قبل كده، ارندر على طول
+  if(_paymentsHydrated){renderAccs();return;}
+  // جيب id+payments بس — fetch خفيف جداً على الـ egress
+  try{
+    const rows=await sbFetch('mtr_bookings','GET',null,'?select=id,payments&order=id.asc');
+    if(Array.isArray(rows)){
+      const map=new Map(rows.map(r=>[r.id,r.payments||[]]));
+      bookings.forEach(b=>{if(map.has(b.id))b.payments=map.get(b.id);});
+      _paymentsHydrated=true;
+    }
+  }catch(e){console.warn('[MTR] payments hydration failed:',e);}
+  renderAccs();
+}
 function renderAccs(){
   const allIn=accEntries.filter(e=>e.op==='in'&&!e.supplierId).reduce((s,e)=>s+e.amount,0);
   const allOut=accEntries.filter(e=>e.op==='expense'&&!e.supplierId).reduce((s,e)=>s+e.amount,0);
@@ -6414,6 +6463,39 @@ function renderAccs(){
     </tbody></table></div></div>`:'';
   // Init nav
   onAccNavChange();
+}
+function printDailyReport(){
+  const today=new Date().toLocaleDateString('ar-EG');
+  const todayISO=new Date().toISOString().split('T')[0];
+  const todayEnts=accEntries.filter(e=>e.date===todayISO||e.createdAt?.startsWith(todayISO));
+  const inEnts=todayEnts.filter(e=>e.op==='in');
+  const outEnts=todayEnts.filter(e=>e.op==='expense');
+  const totalIn=inEnts.reduce((s,e)=>s+e.amount,0);
+  const totalOut=outEnts.reduce((s,e)=>s+e.amount,0);
+  const html=`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>تقرير يوم ${today}</title>
+  <style>body{font-family:'Cairo',Arial,sans-serif;padding:20px;direction:rtl}h2{color:#1a5276;border-bottom:2px solid #1a5276;padding-bottom:8px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;padding:8px 12px;text-align:right;font-size:13px}
+  th{background:#1a5276;color:#fff}.in{color:#1a7a4a;font-weight:700}.out{color:#c0392b;font-weight:700}
+  .summary{display:flex;gap:20px;margin:16px 0}.box{flex:1;padding:12px;border-radius:8px;text-align:center}
+  .box-in{background:#eafaf1;border:1px solid #1a7a4a}.box-out{background:#fde8e8;border:1px solid #c0392b}
+  .box-net{background:#eaf2fb;border:1px solid #1a5276}.box .lbl{font-size:12px;color:#555}.box .val{font-size:20px;font-weight:800;margin-top:4px}</style></head>
+  <body><h2>📄 تقرير يوم ${today}</h2>
+  <div class="summary">
+    <div class="box box-in"><div class="lbl">إجمالي الوارد</div><div class="val in">${totalIn.toLocaleString()} ج</div></div>
+    <div class="box box-out"><div class="lbl">إجمالي الصادر</div><div class="val out">${totalOut.toLocaleString()} ج</div></div>
+    <div class="box box-net"><div class="lbl">الصافي</div><div class="val" style="color:#1a5276">${(totalIn-totalOut).toLocaleString()} ج</div></div>
+  </div>
+  ${inEnts.length?`<h3 style="color:#1a7a4a">💰 الوارد (${inEnts.length} قيد)</h3>
+  <table><thead><tr><th>العميل</th><th>النوع</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>
+  ${inEnts.map(e=>`<tr><td>${e.clientName||'—'}</td><td>${e.type||'—'}</td><td>${e.desc||'—'}</td><td class="in">${e.amount.toLocaleString()} ج</td></tr>`).join('')}
+  </tbody></table>`:'<p style="color:#888">لا توجد قيود واردة اليوم</p>'}
+  ${outEnts.length?`<h3 style="color:#c0392b">💸 الصادر (${outEnts.length} قيد)</h3>
+  <table><thead><tr><th>النوع</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>
+  ${outEnts.map(e=>`<tr><td>${e.type||'—'}</td><td>${e.desc||'—'}</td><td class="out">${e.amount.toLocaleString()} ج</td></tr>`).join('')}
+  </tbody></table>`:''}
+  <p style="margin-top:20px;font-size:11px;color:#aaa">طُبع من نظام أدريسكا — ${new Date().toLocaleString('ar-EG')}</p>
+  </body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();setTimeout(()=>w.print(),400);}
 }
 async function refreshAcc(){
   try{const r=await sbFetch('mtr_acc','GET',null,'?order=id.desc&limit=500');if(r&&Array.isArray(r))accEntries=r.map(mA);renderAccs();}catch(e){console.warn(e)}
@@ -7578,6 +7660,14 @@ function calcEditTotal(id){
 async function saveEditBooking(id){
   const b=bookings.find(x=>x.id===id);
   if(!b){ alert('الحجز غير موجود'); return; }
+  // ── قفل ما بعد الاعتماد ─────────────────────────────────────
+  if(!canDo('bypass_lock')){
+    const approvedCnt=accEntries.filter(e=>e.bookingRef===String(id)&&e.bookingPayRef&&/^\d+_\d+$/.test(e.bookingPayRef)).length;
+    if(approvedCnt>0){
+      const go=await confirm(`⚠️ هذا الحجز عليه ${approvedCnt} دفعة معتمدة في الحسابات.\nالتعديل قد يسبب تعارض. تكمل؟`);
+      if(!go)return;
+    }
+  }
 
   const name=document.getElementById('edit-name')?.value.trim()||b.name;
   const phone=document.getElementById('edit-phone')?.value||b.phone;
