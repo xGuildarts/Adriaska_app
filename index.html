@@ -2336,6 +2336,7 @@ async function doStandaloneReceipt(action){
     if(!bId){alert('من فضلك اختر العميل / الحجز');return;}
     linkedBooking=bookings.find(x=>x.id===bId);
     if(!linkedBooking){alert('الحجز غير موجود');return;}
+    await ensureBookingDetail(linkedBooking); // مهم: لازم نجيب الـ payments الحقيقية الأول قبل أي تعديل عليها عشان منمسحش القديم
     clientName=linkedBooking.name;
   }
   if(btn1)btn1.disabled=true;if(btn2)btn2.disabled=true;
@@ -6727,13 +6728,29 @@ async function delAccE(id){
   const pairRef=e.bookingRef;
   const paired=pairRef&&pairRef.startsWith('pair_')?accEntries.filter(x=>x.bookingRef===pairRef&&x.id!==id):[];
   const pairMsg=paired.length?`\n\nتحذير: هذا القيد له طرف مقابل (${paired[0]?.type||''} - ${paired[0]?.amount?.toLocaleString()||0} ج).\nهل تريد حذف الطرفين معاً؟`:'';
-  const doDeletePair=paired.length?await confirm('حذف القيد؟'+pairMsg):await confirm('حذف القيد؟');
+  // لو القيد مرتبط بحجز (مش pair_) فلازم نمسح الدفعة المقابلة من كشف حساب الحجز برضو
+  const linkedBookingId=pairRef&&!pairRef.startsWith('pair_')?parseInt(pairRef):null;
+  const linkedBooking=linkedBookingId?bookings.find(b=>b.id===linkedBookingId):null;
+  const bookingWarn=linkedBooking?`\n\nتحذير: هذا القيد مرتبط بحجز "${linkedBooking.name}" — هيتم حذف الدفعة المقابلة من كشف حسابه وتحديث المتبقي.`:'';
+  const doDeletePair=await confirm('حذف القيد؟'+pairMsg+bookingWarn);
   if(!doDeletePair)return;
   try{
-    const idsToDelete=[id,...(doDeletePair&&paired.length?paired.map(p=>p.id):[])];
+    const idsToDelete=[id,...(paired.length?paired.map(p=>p.id):[])];
     await Promise.all(idsToDelete.map(did=>sbFetch('mtr_acc','DELETE',null,`?id=eq.${did}`)));
     accEntries=accEntries.filter(x=>!idsToDelete.includes(x.id));
-    addLog(`حذف قيد${paired.length?' مزدوج':''}: ${e?.desc||'-'}`,'del',`المبلغ: ${(e?.amount||0).toLocaleString()} ج · نوع: ${e?.type||'-'}`);
+    // لو مرتبط بحجز، امسح أقرب دفعة مطابقة فى المبلغ من سجل دفعاته وحدّث المتبقي
+    if(linkedBooking){
+      await ensureBookingDetail(linkedBooking);
+      const idx=linkedBooking.payments.findIndex(p=>p.amount===e.amount&&p.date===e.date);
+      if(idx>-1){
+        const np=linkedBooking.payments.filter((_,i)=>i!==idx);
+        const newPaid=linkedBooking.paid-e.amount,newRemaining=linkedBooking.remaining+e.amount;
+        await sbFetch('mtr_bookings','PATCH',{payments:np,paid:newPaid,remaining:newRemaining},`?id=eq.${linkedBooking.id}`);
+        linkedBooking.payments=np;linkedBooking.paid=newPaid;linkedBooking.remaining=newRemaining;
+        markAllTabsDirty();
+      }
+    }
+    addLog(`حذف قيد${paired.length?' مزدوج':''}${linkedBooking?' (مع تحديث حجز '+linkedBooking.name+')':''}: ${e?.desc||'-'}`,'del',`المبلغ: ${(e?.amount||0).toLocaleString()} ج · نوع: ${e?.type||'-'}`);
     renderAccs();
   }catch(err){alert('فشل: '+err.message)}
 }
