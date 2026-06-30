@@ -5491,6 +5491,34 @@ async function ensureBusSeatsLoaded(cn){
     _busSeatsLoadedConvoys.add(cn);
   }catch(ex){console.warn('ensureBusSeatsLoaded failed',cn,ex.message);}
 }
+
+async function delBookingPayment(id,pIdx){
+  const b=bookings.find(x=>x.id===id);if(!b)return;
+  await ensureBookingDetail(b);
+  const p=b.payments[pIdx];if(!p){toast('الدفعة غير موجودة','warn');return;}
+  const isDisburs=p.amount<0;
+  const sign=isDisburs?'مسترد':'دفعة';
+  if(!await confirm(`حذف هذه ${sign}؟\n\nالمبلغ: ${Math.abs(p.amount).toLocaleString()} ج\nالتاريخ: ${p.date||'-'}\n\nسيتم تحديث المتبقي تلقائياً، وسيتم البحث عن القيد المقابل في الحسابات وحذفه أيضاً إن وُجد.`))return;
+  try{
+    const np=b.payments.filter((_,i)=>i!==pIdx);
+    const newPaid=b.paid-p.amount,newRemaining=b.remaining+p.amount;
+    await sbFetch('mtr_bookings','PATCH',{payments:np,paid:newPaid,remaining:newRemaining},`?id=eq.${id}`);
+    b.payments=np;b.paid=newPaid;b.remaining=newRemaining;
+    // دور على القيد المقابل فى الحسابات (لو موجود ومرتبط بنفس الحجز ونفس المبلغ والتاريخ) وامسحه برضو
+    const matchAcc=accEntries.find(e=>e.bookingRef===String(id)&&e.amount===Math.abs(p.amount)&&e.date===p.date);
+    if(matchAcc){
+      try{
+        await sbFetch('mtr_acc','DELETE',null,`?id=eq.${matchAcc.id}`);
+        accEntries=accEntries.filter(x=>x.id!==matchAcc.id);
+      }catch(_){}
+    }
+    addLog(`حذف ${sign}: ${b.name}`,'del',`المبلغ: ${Math.abs(p.amount).toLocaleString()} ج · المتبقي بعد الحذف: ${newRemaining.toLocaleString()} ج${matchAcc?' · تم حذف القيد المقابل من الحسابات':''}`);
+    markAllTabsDirty();
+    toast('✅ تم حذف الدفعة بنجاح','ok');
+    viewClient(id);
+  }catch(e){alert('فشل الحذف: '+e.message);}
+}
+
 let _prevTab='clients';
 async function viewClient(id){
   const b=bookings.find(x=>x.id===id);if(!b)return;
@@ -5516,7 +5544,7 @@ async function viewClient(id){
       }
     }catch(ex){console.warn('detail fetch failed',ex.message);}
   }
-  const pR=b.payments.length?b.payments.map((p,pi)=>{const isDisburs=p.amount<0;return`<tr><td>${p.date||'-'}</td><td style="font-weight:700;color:${isDisburs?'var(--dn)':'var(--ac)'}">${isDisburs?'↓ مسترد '+Math.abs(p.amount).toLocaleString():'↑ '+p.amount.toLocaleString()} ج</td><td>${p.payMethod||'-'}</td><td>${p.note||'-'}</td><td style="text-align:center"><button onclick="printPaymentVoucher(${b.id},${pi})" title="طباعة إذن" style="background:none;border:1px solid var(--bd2);border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:var(--tx2);font-family:'Cairo',sans-serif" onmouseover="this.style.borderColor='var(--pr)';this.style.color='var(--pr)'" onmouseout="this.style.borderColor='var(--bd2)';this.style.color='var(--tx2)'">🖨️</button></td></tr>`;}).join(''):'<tr><td colspan="5" style="text-align:center;color:var(--tx3)">لا توجد دفعات</td></tr>';
+  const pR=b.payments.length?b.payments.map((p,pi)=>{const isDisburs=p.amount<0;return`<tr><td>${p.date||'-'}</td><td style="font-weight:700;color:${isDisburs?'var(--dn)':'var(--ac)'}">${isDisburs?'↓ مسترد '+Math.abs(p.amount).toLocaleString():'↑ '+p.amount.toLocaleString()} ج</td><td>${p.payMethod||'-'}</td><td>${p.note||'-'}</td><td style="text-align:center;white-space:nowrap"><button onclick="printPaymentVoucher(${b.id},${pi})" title="طباعة إذن" style="background:none;border:1px solid var(--bd2);border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:var(--tx2);font-family:'Cairo',sans-serif;margin-left:4px" onmouseover="this.style.borderColor='var(--pr)';this.style.color='var(--pr)'" onmouseout="this.style.borderColor='var(--bd2)';this.style.color='var(--tx2)'">🖨️</button>${canDo('delete_accounts')||canDo('edit_booking')?`<button onclick="delBookingPayment(${b.id},${pi})" title="حذف الدفعة" style="background:none;border:1px solid var(--dn);border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:var(--dn);font-family:'Cairo',sans-serif" onmouseover="this.style.background='var(--dnl)'" onmouseout="this.style.background='none'">🗑️</button>`:''}</td></tr>`;}).join(''):'<tr><td colspan="5" style="text-align:center;color:var(--tx3)">لا توجد دفعات</td></tr>';
   const aR=(b.apts||[]).map(a=>`<tr><td><span class="badge b-bl">${a}</span></td><td style="color:var(--tx2);font-size:11px">${APTS[a]?.desc||''}</td><td style="font-weight:700">${((b.aptPrices||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
   const aR2=(b.apts2||[]).map(a=>`<tr><td><span class="badge b-wn">${a}</span></td><td style="color:var(--tx2);font-size:11px">${APTS[a]?.desc||''} <span style="background:var(--wnl);color:var(--wn);border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">${convTxt(b.convoy2)}</span></td><td style="font-weight:700">${((b.aptPrices2||{})[a]||0).toLocaleString()} ج</td></tr>`).join('');
   const base2seats=aptSeats2(b);
