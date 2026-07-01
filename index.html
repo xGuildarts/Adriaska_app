@@ -652,7 +652,7 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
   <div id="dash-alerts" style="margin-bottom:.875rem;display:none">
     <div style="background:var(--sf);border-radius:14px;border:1.5px solid var(--dn);overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--dnl);border-bottom:1.5px solid var(--dn);flex-wrap:wrap;gap:8px">
-        <span style="font-weight:800;font-size:14px;color:var(--dn);display:flex;align-items:center;gap:7px" id="dash-alerts-title">⚠️ تذكيرات المتبقيات</span>
+        <span style="font-weight:800;font-size:14px;color:var(--dn);display:flex;align-items:center;gap:7px" id="dash-alerts-title">⚠️ تنبيهات</span>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <select id="alerts-convoy-filter" onchange="renderDashAlerts()" style="font-size:11px;padding:3px 8px;border-radius:8px;border:1px solid var(--dn);background:var(--dnl);color:var(--dn);font-family:'Cairo',sans-serif;font-weight:700">
             <option value="">كل الأفواج</option>
@@ -684,6 +684,16 @@ CREATE POLICY "allow_all" ON mtr_closing_expenses FOR ALL USING (true) WITH CHEC
     <div class="card-body">
       <div id="dash-convoy-stats" style="display:flex;flex-wrap:wrap;gap:.65rem;margin-top:.5rem"></div>
     </div>
+  </div>
+  <!-- بانل: حجوزات تحتاج مراجعة -->
+  <div id="card-dash-issues" class="card collapsible" style="margin-bottom:.875rem;display:none">
+    <div class="ctitle">🔍 حجوزات تحتاج مراجعة <span id="dash-issues-count" style="font-size:12px;font-weight:700;background:var(--dnl);color:var(--dn);padding:2px 10px;border-radius:20px;margin-right:auto"></span></div>
+    <div class="card-body"><div id="dash-issues-body" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div></div>
+  </div>
+  <!-- بانل: آخر التعديلات -->
+  <div id="card-dash-log" class="card collapsible collapsed" style="margin-bottom:.875rem;display:none">
+    <div class="ctitle">📜 آخر التعديلات</div>
+    <div class="card-body"><div id="dash-log-body" style="margin-top:4px"></div></div>
   </div>
   <div class="card collapsible" id="card-dash-recent"><div class="ctitle">آخر الحجوزات</div><div class="card-body">
     <div class="tbl-wrap"><table><thead><tr><th>العميل</th><th>الهاتف</th><th>الشقق</th><th>الفوج</th><th>باص</th><th>مكان الركوب</th><th>المسؤول</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead><tbody id="dash-tbl"></tbody></table></div>
@@ -2810,8 +2820,8 @@ function renderDashAlerts(){
 
   const overdue=[],urgent=[],soon=[];
   bookings.filter(b=>b.status==='active'&&b.remaining>0&&(!filterVal||String(b.convoy)===filterVal)).forEach(b=>{
-    const convData=window._schedData&&window._schedData[b.convoy];
-    const depDate=convData?new Date(convData.dep):null;
+    const convData=getConv(b.convoy); // إصلاح: كان بيدور على window._schedData اللي مش متعرّف أبداً فالتنبيهات كانت معطلة تماماً
+    const depDate=convData?new Date(convData.checkin):null;
     if(!depDate||isNaN(depDate))return; // بس اللي عندهم تاريخ معروف
     depDate.setHours(0,0,0,0);
     const diff=Math.ceil((depDate-today)/(1000*60*60*24));
@@ -2820,10 +2830,25 @@ function renderDashAlerts(){
     else if(diff<=7) soon.push({b,diff,depDate});
   });
 
+  // ===== تنبيه: أفواج قربت (خلال 7 أيام) ولسه فيها شقق فاضية =====
+  const capAlerts=[];
+  if(!filterVal){
+    CONVOYS.forEach(c=>{
+      const dep=new Date(c.checkin);dep.setHours(0,0,0,0);
+      const diff=Math.ceil((dep-today)/(1000*60*60*24));
+      if(diff<0||diff>7)return; // بس الأفواج خلال أسبوع قدام
+      const convAptList=APT_LIST.filter(a=>{const apt=APTS[a];if(!apt._extra)return true;const convs=apt.convoys;if(!convs||!convs.length)return false;return convs.some(v=>parseInt(v)===c.num);});
+      const bk=bookedApts(c.num);
+      const av=convAptList.filter(a=>!bk.includes(a));
+      if(av.length>0)capAlerts.push({c,diff,dep,av});
+    });
+  }
+
   const all=[...overdue,...urgent,...soon];
-  if(!all.length){panel.style.display='none';return;}
+  if(!all.length&&!capAlerts.length){panel.style.display='none';return;}
   panel.style.display='block';
-  if(titleEl)titleEl.textContent=`⚠️ متبقيات قريبة (${all.length} عميل · ${all.reduce((s,x)=>s+x.b.remaining,0).toLocaleString()} ج)`;
+  const totalRemaining=all.reduce((s,x)=>s+x.b.remaining,0);
+  if(titleEl)titleEl.textContent=`⚠️ تنبيهات (${all.length} متبقي${capAlerts.length?' · '+capAlerts.length+' فوج فيه شقق فاضية':''}${all.length?' · '+totalRemaining.toLocaleString()+' ج':''})`;
 
   const mkRow=({b,diff,depDate},colBg,colTx)=>{
     const diffTxt=diff<0?`تأخر ${Math.abs(diff)} يوم`:diff===0?'اليوم!':diff===1?'غداً':`${diff} أيام`;
@@ -2836,11 +2861,115 @@ function renderDashAlerts(){
     </div>`;
   };
 
+  const mkCapRow=({c,diff,dep,av})=>{
+    const diffTxt=diff===0?'اليوم!':diff===1?'غداً':`خلال ${diff} أيام`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--bd);cursor:pointer;transition:.15s" onclick="showTab('sched')" onmouseover="this.style.background='var(--acl)'" onmouseout="this.style.background=''">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:var(--tx)">${convTxt(c.num)}</div>
+        <div style="font-size:11px;color:var(--tx3)">${dep.toLocaleDateString('ar-EG')} · ${diffTxt} · شقق فاضية: ${av.join('، ')}</div>
+      </div>
+      <span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;background:#fef0d8;color:#b7770d">${av.length} شقة</span>
+    </div>`;
+  };
+
   let html='';
+  if(capAlerts.length) html+=`<div style="padding:4px 14px;font-size:11px;font-weight:800;color:#b7770d;background:#fef9ec">🏠 أفواج قربت وفيها شقق فاضية (${capAlerts.length})</div>`+capAlerts.map(mkCapRow).join('');
   if(overdue.length) html+=`<div style="padding:4px 14px;font-size:11px;font-weight:800;color:#c0392b;background:var(--dnl)">🔴 سافروا بدون سداد كامل (${overdue.length})</div>`+overdue.map(x=>mkRow(x,'#fde8e8','#c0392b')).join('');
   if(urgent.length)  html+=`<div style="padding:4px 14px;font-size:11px;font-weight:800;color:#e67e22;background:#fef9ec">🟠 السفر خلال 3 أيام (${urgent.length})</div>`+urgent.map(x=>mkRow(x,'#fef0d8','#b7770d')).join('');
   if(soon.length)    html+=`<div style="padding:4px 14px;font-size:11px;font-weight:800;color:#1a5276;background:var(--acl)">🔵 خلال 7 أيام (${soon.length})</div>`+soon.map(x=>mkRow(x,'var(--acl)','var(--ac)')).join('');
   body.innerHTML=html;
+}
+
+// ====================================================
+// 3b. DASH ISSUES — حجوزات تحتاج مراجعة
+// ====================================================
+function renderDashIssues(){
+  const card=document.getElementById('card-dash-issues');
+  const body=document.getElementById('dash-issues-body');
+  const countEl=document.getElementById('dash-issues-count');
+  if(!card||!body)return;
+  const isAdmin=currentUser&&['admin','gm'].includes((currentUser.role||'').toLowerCase());
+  if(!isAdmin){card.style.display='none';return;}
+
+  const issues=[];
+  const ab=activeBookings();
+
+  // 1) حجوزات بدون شقق مخصصة
+  ab.forEach(b=>{if(!b.apts||!b.apts.length)issues.push({type:'no_apt',b,label:'بدون شقة',color:'#c0392b',bg:'#fde8e8'});});
+
+  // 2) نفس رقم التليفون لأكتر من اسم مختلف
+  const phoneMap={};
+  ab.forEach(b=>{if(!b.phone)return;if(!phoneMap[b.phone])phoneMap[b.phone]=[];phoneMap[b.phone].push(b);});
+  Object.entries(phoneMap).forEach(([ph,list])=>{
+    const names=[...new Set(list.map(b=>b.name))];
+    if(names.length>1)issues.push({type:'dup_phone',bList:list,label:`نفس الرقم (${ph}) لـ ${names.length} أسماء مختلفة: ${names.join(' / ')}`,color:'#7d3c98',bg:'#f5eef8'});
+  });
+
+  if(!issues.length){card.style.display='none';return;}
+  card.style.display='block';
+  if(countEl)countEl.textContent=issues.length+' مشكلة';
+
+  body.innerHTML=issues.map(iss=>{
+    if(iss.type==='no_apt'){
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:${iss.bg};cursor:pointer" onclick="gsGoto(${iss.b.id})">
+        <span style="font-size:16px">⚠️</span>
+        <div style="flex:1">
+          <span style="font-weight:700;font-size:13px;color:${iss.color}">${iss.b.name}</span>
+          <span style="font-size:11px;color:var(--tx3);margin-right:8px">${convTxt(iss.b.convoy)} · ${iss.b.phone||'-'}</span>
+        </div>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:white;color:${iss.color}">${iss.label}</span>
+      </div>`;
+    }
+    if(iss.type==='dup_phone'){
+      return `<div style="padding:8px 12px;border-radius:10px;background:${iss.bg}">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+          <span style="font-size:16px">🔁</span>
+          <span style="font-size:12px;font-weight:700;color:${iss.color}">${iss.label}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          ${iss.bList.map(b=>`<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:white;color:var(--tx);cursor:pointer;font-weight:600" onclick="gsGoto(${b.id})">${b.name} · ${convTxt(b.convoy)}</span>`).join('')}
+        </div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+  setTimeout(initCollapsibleCards,50);
+}
+
+// ====================================================
+// 3c. DASH LOG — آخر التعديلات على الداشبورد
+// ====================================================
+function renderDashLog(){
+  const card=document.getElementById('card-dash-log');
+  const body=document.getElementById('dash-log-body');
+  if(!card||!body)return;
+  const isAdmin=currentUser&&['admin','gm'].includes((currentUser.role||'').toLowerCase());
+  if(!isAdmin||!activityLog||!activityLog.length){card.style.display='none';return;}
+  card.style.display='block';
+
+  const typeIcon={add:'➕',del:'🗑️',edit:'✏️',login:'🔑'};
+  const typeColor={add:'var(--gr)',del:'var(--dn)',edit:'var(--ac)',login:'var(--tx3)'};
+  const recent=activityLog.slice(0,12);
+
+  body.innerHTML=`<div style="display:flex;flex-direction:column;gap:2px">
+    ${recent.map(e=>{
+      const d=e.created_at?new Date(e.created_at):null;
+      const timeStr=d?d.toLocaleString('ar-EG',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:8px;transition:.15s" onmouseover="this.style.background='var(--sf2)'" onmouseout="this.style.background=''">
+        <span style="font-size:14px;margin-top:1px">${typeIcon[e.log_type]||'📌'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:${typeColor[e.log_type]||'var(--tx)'}">${e.action||''}</div>
+          ${e.detail?`<div style="font-size:11px;color:var(--tx3);margin-top:1px">${e.detail}</div>`:''}
+        </div>
+        <div style="text-align:left;flex-shrink:0">
+          <div style="font-size:10px;color:var(--tx3);white-space:nowrap">${timeStr}</div>
+          <div style="font-size:10px;color:var(--ac);font-weight:700;white-space:nowrap">${e.user||e.username||''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  <div style="text-align:center;margin-top:8px"><button class="btn btn-sm" onclick="showTab('log')" style="font-size:11px">عرض السجل كامل →</button></div>`;
+  setTimeout(initCollapsibleCards,50);
 }
 
 // ====================================================
@@ -4896,6 +5025,8 @@ function _renderDashImmediate(){
   setTimeout(renderDashCharts, 50);
   renderDashAlerts();
   renderDashTasksAlert();
+  renderDashIssues();
+  renderDashLog();
   setTimeout(initCollapsibleCards,100);
   // ===== إحصائيات التحصيل per فوج =====
   const convStatsEl=document.getElementById('dash-convoy-stats');
